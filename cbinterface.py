@@ -25,9 +25,9 @@ from cbapi.response import *
 from cbapi import live_response_api
 from cbapi.errors import ApiError, ObjectNotFoundError, TimeoutError, MoreThanOneResultError
 
-from lib.CBProcess import ProcessList, ProcessWrapper
-from lib.CBquery import CBquery
-from lib.CBglobal import eastern_time
+from classes.CBProcess import ProcessList, ProcessWrapper
+from classes.CBquery import CBquery
+from classes.CBglobal import eastern_time
 
 # Not using logging.BasicConfig because it turns on the cbapi logger
 LOGGER = logging.getLogger('cbinterface')
