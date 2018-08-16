@@ -1,12 +1,16 @@
 
+import datetime
+import logging
+from dateutil import tz
 from cbapi.response import *
-
-from classes.CBglobal import eastern_time
+from modules.helpers import eastern_time
 
 
 ## -- Process querying functions -- ##
 class CBquery():
     cb = None
+    LOGGER = logging.getLogger(__name__)
+
     def __init__(self, profile=None):
         self.cb = CbResponseAPI(profile=profile) if profile else CbResponseAPI()
 
@@ -38,18 +42,16 @@ class CBquery():
         if args.start_time:
             try:
                 start_time = datetime.datetime.strptime(args.start_time, '%Y-%m-%d %H:%M:%S')
-            except:
-                LOGGER.error("start time time format error.")
-                sys.exit(1)
+            except Exception as e:
+                raise e
 
             start_time = start_time.replace(tzinfo=tz.gettz('America/New_York')).astimezone(tz.gettz('UTC'))
 
             if args.end_time:
                 try:
                     end_time =  datetime.datetime.strptime(args.end_time, '%Y-%m-%d %H:%M:%S')
-                except:
-                    LOGGER.error("start time time format error.")
-                    sys.exit(1)
+                except Exception as e:
+                    raise e
                 end_time = end_time.replace(tzinfo=tz.gettz('America/New_York')).astimezone(tz.gettz('UTC'))
                 processes = self.cb.select(Process).where(args.query).group_by('id').min_last_server_update(start_time).max_last_server_update(end_time)
             else:
