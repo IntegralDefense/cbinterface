@@ -748,7 +748,7 @@ def Remediation(cb, args):
         if dirpaths is not None:
             #print("[INFO] Directory deletion currently disabled")
             for dirpath in dirpaths:
-                if insinstance(dirpath, tuple):
+                if isinstance(dirpath, tuple):
                     dirpath = dirpath[1] 
                 command_str = "powershell.exe Remove-Item {} -Force -Recurse".format(dirpath)
                 result = lr_session.create_process(command_str)
