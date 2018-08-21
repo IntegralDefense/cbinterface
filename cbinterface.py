@@ -1066,9 +1066,13 @@ def main():
         return 0
 
     # lazy hack
-    default_profile = auth.default_profile
-    default_profile['lerc_install_cmd'] = None
-    config = auth.CredentialStore("response").get_credentials(profile=profile)
+    config = {}
+    try:
+        default_profile = auth.default_profile
+        default_profile['lerc_install_cmd'] = None
+        config = auth.CredentialStore("response").get_credentials(profile=profile)
+    except:
+        config['lerc_install_cmd'] = None
 
     # Collection #
     if args.command == 'collect':
@@ -1087,7 +1091,6 @@ def main():
     # Process Investigation #
     process_tree = None
     if args.command == 'proc':
-        #process_tree = process_event_analysis(proc, args)
         proc = proc_search_environments(profiles, args.process)
         if not proc:
             return 1
