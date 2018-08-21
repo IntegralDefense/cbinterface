@@ -372,24 +372,26 @@ def LR_collection(hyper_lr, args):
     localfile = None
     for dir_item in lr_session.list_directory(outputdir):
         if 'ARCHIVE' in dir_item['attributes'] and  dir_item['filename'].endswith('7z'):
-            hyper_lr.lerc_session.Upload(outputdir+dir_item['filename'])
-            command = hyper_lr.lerc_session.check_command()
-            # wait for the client to complete the command
-            print(" ~ Issued upload command to lerc. Waiting for command to finish..")
-            if hyper_lr.lerc_session.wait_for_command(command):
-                print(" ~ lerc command complete. Streaming LR from lerc server..")
-                command = hyper_lr.lerc_session.get_results(file_path=dir_item['filename'])
-                if command:
-                    print("[+] lerc command results: ")
-                    pprint.pprint(command, indent=6)
-                    file_path = command['server_file_path']
-                    filename = file_path[file_path.rfind('/')+1:]
-                    print()
-                    print("[+] Wrote {}".format(dir_item['filename']))
-                    localfile = dir_item['filename']
+            if hyper_lr.lerc_session:
+                hyper_lr.lerc_session.Upload(outputdir+dir_item['filename'])
+                command = hyper_lr.lerc_session.check_command()
+                # wait for the client to complete the command
+                print(" ~ Issued upload command to lerc. Waiting for command to finish..")
+                if hyper_lr.lerc_session.wait_for_command(command):
+                    print(" ~ lerc command complete. Streaming LR from lerc server..")
+                    command = hyper_lr.lerc_session.get_results(file_path=dir_item['filename'])
+                    if command:
+                        print("[+] lerc command results: ")
+                        pprint.pprint(command, indent=6)
+                        file_path = command['server_file_path']
+                        filename = file_path[file_path.rfind('/')+1:]
+                        print()
+                        print("[+] Wrote {}".format(dir_item['filename']))
+                        localfile = dir_item['filename']
+                else:
+                    LOGGER.error("problem waiting for lerc client to complete command")
             else:
-                LOGGER.error("problem waiting for lerc client to complete command")
-            #localfile = getFile_with_timeout(lr_session, args.sensor, outputdir+dir_item['filename'], dir_item['filename'])
+                localfile = getFile_with_timeout(lr_session, args.sensor, outputdir+dir_item['filename'], dir_item['filename'])
 
     # HERE need to delete our LR files from sensor
     lr_cleanup(lr_session)
@@ -1072,7 +1074,7 @@ def main():
         default_profile['lerc_install_cmd'] = None
         config = auth.CredentialStore("response").get_credentials(profile=profile)
     except:
-        config['lerc_install_cmd'] = None
+        pass
 
     # Collection #
     if args.command == 'collect':
@@ -1081,7 +1083,10 @@ def main():
         result = Collection(hyper_lr, args)
         if not result:
             # perform full live response collection
-            hyper_lr.deploy_lerc(config['lerc_install_cmd'])
+            if config['lerc_install_cmd']:
+                hyper_lr.deploy_lerc(config['lerc_install_cmd'])
+            else:
+                LOGGER.info("{} environment is not configrued for LERC deployment".format(profile))
             return LR_collection(hyper_lr, args)
 
     # Remediation #

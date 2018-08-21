@@ -1,12 +1,17 @@
 
+import sys
 import time
 import logging
 import datetime
 from cbapi.response import models 
 
-from library import lerc_api
-
 logging.getLogger(__name__)
+
+try:
+    from library import lerc_api
+except:
+    logging.warning("failed to import lerc_api. Will fallback to pure cb live response")
+
 
 ## -- Live Response (collect/remediate) -- ##
 class hyperLiveResponse():
@@ -15,11 +20,13 @@ class hyperLiveResponse():
     lerc_session = None
     lerc_status = None
 
+
     def __init__(self, sensor):
         if not isinstance(sensor, models.Sensor):
             raise Exception("sensor is no cbapi.response.models.Sensor")
         self.sensor = sensor
         self.hostname = self.sensor.hostname
+
 
     def go_live(self):
         if self.lr_session:
@@ -43,7 +50,12 @@ class hyperLiveResponse():
                                                                                    time.ctime()))
         return self.lr_session
 
+
     def deploy_lerc(self, install_cmd, lerc_installer_path=None):
+
+        if 'lerc_api' not in sys.modules:
+            logging.error("lerc_api module not found.")
+            return False
 
         default_lerc_path = '/opt/lerc_control/lercSetup.msi'
         if lerc_installer_path:
