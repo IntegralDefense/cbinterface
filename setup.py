@@ -80,7 +80,7 @@ setup(
 
     # You can just specify the packages manually here if your project is
     # simple. Or you can use find_packages().
-    packages=['classes', 'lr_tools'],
+    packages=['modules', 'lr_tools', 'library'],
 
 
     # Alternatively, if you want to distribute just a my_module.py, uncomment
