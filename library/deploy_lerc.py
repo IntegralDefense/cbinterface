@@ -1,1 +1,0 @@
-/opt/lerc_control/deploy_lerc.py
