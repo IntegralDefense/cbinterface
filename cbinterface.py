@@ -1135,7 +1135,7 @@ def proc_search_environments(profiles, proc_guid):
     return False
 
 
-def main(argv):
+def main():
 
     parser = argparse.ArgumentParser(description="An interface to our CarbonBlack environments")
     profiles = auth.CredentialStore("response").get_profiles()
@@ -1365,7 +1365,7 @@ def main(argv):
     return 0
 
 if __name__ == "__main__":
-    result = main(sys.argv[1:])
+    result = main()
     if result != 1:
         print(time.ctime() + "...Done.")
     sys.exit(result)
