@@ -6,16 +6,16 @@ import re
 import sys
 import signal
 import time
+import pprint
 import argparse
-#import datetime
+import datetime
 import shlex
 import subprocess
 import json
 import glob
 import logging
-import pymysql
 
-#from dateutil import tz
+from dateutil import tz
 from queue import Queue
 from threading import Thread
 from configparser import ConfigParser
@@ -25,9 +25,10 @@ from cbapi.response import *
 from cbapi import live_response_api
 from cbapi.errors import ApiError, ObjectNotFoundError, TimeoutError, MoreThanOneResultError
 
-from classes.CBProcess import ProcessList, ProcessWrapper
-from classes.CBquery import CBquery
-from classes.CBglobal import eastern_time
+from cbinterface.modules.process import SuperProcess
+from cbinterface.modules.query import CBquery
+from cbinterface.modules.helpers import eastern_time
+from cbinterface.modules.response import hyperLiveResponse
 
 # Not using logging.BasicConfig because it turns on the cbapi logger
 LOGGER = logging.getLogger('cbinterface')
@@ -38,6 +39,8 @@ handler = logging.StreamHandler()
 handler.setFormatter(formatter)
 handler.setLevel(logging.DEBUG)
 LOGGER.addHandler(handler)
+
+logging.getLogger('lerc_api').setLevel(logging.INFO)
 
 # MAX number of threads performing splunk searches
 MAX_SEARCHES = 4
@@ -222,333 +225,6 @@ def get_vxtream_cb_guids(report):
     return [ p.id for p in process_list ]
 
 
-def query_vx_detection_db(process_list):
-    ''' TODO: delete all this functionaliy or move db items to a config file '''
-    db = pymysql.connect("removed","removed","removed","removed")
-    cursor = db.cursor(pymysql.cursors.DictCursor)
-    results_dict = {}
-    for process in process_list:
-        query = "SELECT * FROM splunk_detections WHERE proc_guid='{}'".format(process.id)
-        cursor.execute(query)
-        results_dict[process.id] = []
-        for row in cursor:
-            results_dict[process.id].append(row['hunt_name'])
-    db.close()
-    return results_dict
-
-
-## -- Process analysis functions -- ##
-def events_to_json(proc):
-
-    process_raw_sum_data = proc._cb.get_object("/api/v1/process/{0}".format(proc.id))
-    process_summary = process_raw_sum_data['process']
-    process_summary['parent'] = process_raw_sum_data['parent']
-    start_time = process_summary['start'].replace('T', ' ')
-    start_time = start_time.replace('Z','')
-    start_time = datetime.datetime.strptime(start_time, '%Y-%m-%d %H:%M:%S.%f')
-    process_summary['start'] = eastern_time(start_time)
-
-    process_summary['filemods'] = []
-    process_summary['regmods'] = []
-    process_summary['unsigned_modloads'] = []
-    process_summary['netconns'] = []
-    process_summary['crossprocs'] = []
-    process_summary['children'] = []
-    #process_summary['segments'] = []
-
-    for segment in proc.get_segments():
-        proc.current_segment = segment
-        #process_summary['segments'].append(segment)
-
-        for nc in proc.netconns:
-            nc_dict = { 'timestamp': str(eastern_time(nc.timestamp)), 'domain': nc.domain,
-                        'remote_ip': nc.remote_ip, 'remote_port': nc.remote_port,
-                        'proto': nc.proto, 'direction': nc.direction, 'local_ip': nc.local_ip,
-                        'local_port': nc.local_port, 'proxy_ip': nc.proxy_ip,
-                        'proxy_port': nc.proxy_port, 'segment': segment }
-            process_summary['netconns'].append(nc_dict)
-
-        for child in proc.children:
-            child = { 'timestamp': str(eastern_time(child.timestamp)), 'procguid': child.procguid,
-                      'pid': child.pid, 'path': child.path, 'md5': child.md5, 'segment': segment }
-            process_summary['children'].append(child)
-
-        for fm in proc.filemods:
-            fm_dict = { 'timestamp': str(eastern_time(fm.timestamp)), 'type': fm.type, 'path': fm.path,
-                        'filetype': fm.filetype, 'md5': fm.md5, 'segment': segment }
-            # note we can also cb.select the md5 and see if it's signed, etc.
-            process_summary['filemods'].append(fm_dict)
-
-        for rm in proc.regmods:
-            rm_dict = { 'timestamp': str(eastern_time(rm.timestamp)), 'type': rm.type,
-                        'path': rm.path, 'segment': segment }
-            process_summary['regmods'].append(rm_dict)
-
-        for ml in proc.unsigned_modloads:
-            unsml_dict = { 'timestamp': str(eastern_time(ml.timestamp)), 'md5': ml.md5,
-                           'path': ml.path, 'segment': segment }
-            process_summary['unsigned_modloads'].append(unsml_dict)
-
-        for crossp in proc.crossprocs:
-            cp_dict = { 'timestamp': str(eastern_time(crossp.timestamp)), 'type': crossp.type,
-                        'privileges': crossp.privileges, 'target_md5': crossp.target_md5,
-                        'target_path': crossp.target_path, 'segment': segment }
-            process_summary['crossprocs'].append(cp_dict)
-
-    return process_summary
-
-
-def print_filemods(proc):
-
-    print("%s=== FILEMODS ====" % ('  '))
-
-    for segment in proc.get_segments():
-        proc.current_segment = segment
-        for fm in proc.filemods:
-
-            signed = ""
-            product_name = ""
-            if fm.type != "CreatedFile" and fm.md5:
-                try:
-                    b = proc._cb.select(Binary, fm.md5)
-                    signed = b.signed
-                    product_name = b.product_name
-                    print("%s%s: %s: %s , md5:%s, signed:%s, product_name:%s" % ('  ',
-                          eastern_time(fm.timestamp), fm.type, fm.path,
-                          fm.md5, signed, product_name))
-                except ObjectNotFoundError:
-                    print("%s%s: %s: %s , md5:%s" % ('  ', eastern_time(fm.timestamp),
-                          fm.type, fm.path, fm.md5))
-            elif fm.type != "CreatedFile":
-                print("%s%s: %s: %s" % ('  ', eastern_time(fm.timestamp), fm.type, fm.path))
-    print()
-
-
-def print_netconns(proc):
-    print("%s=== NETCONNS ====" % ('  '))
-
-    for segment in proc.get_segments():
-        proc.current_segment = segment
-        for nc in proc.netconns:
-            print("  {}: ({}) remote IP:{} remote port:{} domain:{}".format(eastern_time(nc.timestamp),
-                                                                            nc.direction, nc.remote_ip,
-                                                                            nc.remote_port, nc.domain))
-    print()
-
-
-def print_regmods(proc):
-    print("  === REGMODS ====")
-
-    for segment in proc.get_segments():
-        proc.current_segment = segment
-        for rm in proc.regmods:
-            print("  {}: {} {}".format(eastern_time(rm.timestamp), rm.type, rm.path))
-    print()
-
-
-def unsigned_modloads(proc):
-    print("%s=== UNSIGNED MODLOADS ====" % ('  '))
-
-    for segment in proc.get_segments():
-        proc.current_segment = segment
-        for unmodload in proc.unsigned_modloads:
-            print("  {}: {} , md5:{}".format(eastern_time(unmodload.timestamp),
-                                             unmodload.path, unmodload.md5))
-    print()
-
-
-def print_crossprocs(proc):
-    print("%s=== CROSSPROCS ====" % ('  '))
-
-    for segment in proc.get_segments():
-        proc.current_segment = segment
-        for cross in proc.crossprocs:
-            print("  {} | {} | {} -> {} | {} -> {}".format(eastern_time(cross.timestamp),
-                                                           cross.type,
-                                                           cross.source_path,
-                                                           cross.target_path,
-                                                           cross.source_proc.webui_link,
-                                                           cross.target_proc.webui_link))
-            print()
-    print()
-
-
-def print_child_events(proc):
-    print("  == CHILDPROC Start/End Events ==")
-    children = {}
-    # group childproc events together for printing
-    for childproc in proc.children:
-        guid = childproc.procguid[:childproc.procguid.rfind('-')]
-        if guid in children:
-            children[guid].append(childproc)
-        else:
-            children[guid] = [childproc]
-    # print
-    for guid in children:
-        child_events = children[guid]
-        # reverse so they're printed in start/end sequence
-        for c in reversed(child_events):
-            print("  {}: {} (PID={}) - {}".format(eastern_time(c.timestamp),
-                                                  c.path,
-                                                  c.pid,
-                                                  c.procguid))
-        print()
-
-
-def analyze_proc(proc):
-    print_filemods(proc)
-    print_netconns(proc)
-    print_regmods(proc)
-    unsigned_modloads(proc)
-    print_crossprocs(proc)
-
-
-def walk_process_tree(proc):
-    process_list = ProcessList()
-    # add root proc
-    process_list.add_process(ProcessWrapper(proc.cmdline, proc.process_pid,
-                                            proc.parent_pid, proc.process_name, proc.id))
-    def crawler(process_list, proc):
-        childguids = []
-        for childproc in proc.children:
-            if childproc.procguid not in childguids:
-                childguids.append(childproc.procguid)
-
-                # Get all events by selecting the process (CbChildProcEvent != Process)
-                cProc = proc._cb.select(Process, proc._cb.select(Process, childproc.procguid).id)
-
-                if childproc.is_suppressed:
-                    process_list.add_process(ProcessWrapper(
-                                             "[DATA SUPPRESSED] "+childproc.proc_data['cmdline'],
-                                             childproc.pid, proc.process_pid, childproc.path,
-                                             childproc.procguid, childproc.is_suppressed))
-                else:
-                    process_list.add_process(ProcessWrapper(
-                                             cProc.cmdline, cProc.process_pid,
-                                             cProc.parent_pid, cProc.process_name,
-                                             cProc.id))
-                    crawler(process_list, cProc)
-        return process_list
-
-    process_list = crawler(process_list, proc)
-
-    return process_list
-
-
-def process_event_analysis(proc, args):
-
-    process_tree = None
-    if args.proc_info:
-        binary_vinfo = proc.binary.version_info
-        binary_sdata = proc.binary.signing_data
-        binary_vt = proc.binary.virustotal
-        print("\n\t-------------------------")
-        print("\tProcess Name: {}".format(proc.process_name))
-        print("\tProcess PID: {}".format(proc.process_pid))
-        print("\tProcess Start: {}".format(eastern_time(proc.start)))
-        print("\tProcess MD5: {}".format(proc.process_md5))
-        print("\tCommand Line: {}".format(proc.cmdline))
-        print("\tParent Name: {}".format(proc.parent_name))
-        print("\tParent GUID: {}".format(proc.parent_id))
-        print("\tHostname: {}".format(proc.hostname))
-        print("\tUsername: {}".format(proc.username))
-        print("\tBinary Description: {}".format(binary_vinfo.file_desc))
-        print("\tProduct Name: {}".format(binary_vinfo.product_name))
-        print("\tDigital Copyright: {}".format(binary_vinfo.legal_copyright))
-        print("\tOriginal filename: {}".format(binary_vinfo.original_filename))
-        print("\tSigned Status: {}".format(binary_sdata.result))
-        print("\tSignature Publisher: {}".format(binary_sdata.publisher))
-        print("\tSignature Issuer: {}".format(binary_sdata.issuer))
-        print("\tSignature Subject: {}".format(binary_sdata.subject))
-        print("\tVirusTotal Score: {}".format(binary_vt.score))
-        print("\tVirusTotal Link: {}".format(binary_vt.link))
-        print("\tGUI Link: {}".format(proc.webui_link))
-        print()
-        return None
-
-    cb = proc._cb
-    if args.walk_tree:
-        print("\nProcess tree for {0:s} executed on {1:s} by {2:s}:\n".format(proc.path,
-                                                                              proc.hostname,
-                                                                              proc.username))
-        process_tree = walk_process_tree(proc)
-        print(process_tree) 
-        print("")
-
-        if process_tree.size > 10 and args.no_analysis != True and args.warnings == True:
-            print("Warning: Process Tree contains {} processes.".format(process_tree.size))
-            print_results = input("Print all process tree events? (y/n) [n] ") or 'n'
-            arg.no_analysis = True if print_results == 'n' else False
-
-        for process in process_tree:
-            if process.is_suppressed:
-                print("+  [DATA SUPPRESSED] {} (PID:{}) - {}".format(process.proc_name, process.pid,
-                                                                   process.id))
-                continue
-
-            proc = cb.select(Process, process.id)
-            print("+  {} (PID:{}) - {}".format(proc.process_name, proc.process_pid,
-                                               process.id))
-            if args.filemods:
-                print_filemods(proc)
-                args.no_analysis = True
-            if args.netconns:
-                print_netconns(proc)
-                args.no_analysis = True
-            if args.regmods:
-                print_regmods(proc)
-                args.no_analysis = True
-            if args.unsigned_modloads:
-                unsigned_modloads(proc)
-                args.no_analysis = True
-            if args.crossprocs:
-                print_crossprocs(proc)
-                args.no_analysis = True
-
-            if args.no_analysis != True:
-                if args.json:
-                    print(events_to_json(proc))
-                else:
-                    analyze_proc(proc)
-
-    else:
-        process_tree = ProcessList()
-        process_tree.add_process(ProcessWrapper(proc.cmdline, proc.process_pid,
-                                                proc.parent_pid, proc.process_name, proc.id))
-        
-        print("\n{0:s} executed on {1:s} by {2:s}:\n".format(proc.path,
-                                                             proc.hostname, proc.username))
-        print(process_tree)
-        print()
-        if args.filemods:
-            print_filemods(proc)
-            args.no_analysis = True
-        if args.netconns:
-            print_netconns(proc)
-            args.no_analysis = True
-        if args.regmods:
-            print_regmods(proc)
-            args.no_analysis = True
-        if args.unsigned_modloads:
-            unsigned_modloads(proc)
-            args.no_analysis = True
-        if args.crossprocs:
-            print_crossprocs(proc)
-            args.no_analysis = True
-        if args.show_children:
-            print_child_events(proc)
-            args.no_analysis = True
-
-        if args.no_analysis != True:
-            if args.json:
-                print(events_to_json(proc))
-            else:
-                analyze_proc(proc)
-                print_child_events(proc)
-
-    return process_tree
-
-
 ## -- Live Response (collect/remediate) -- ##
 def go_live(sensor):
     start_time = time.time()
@@ -613,8 +289,9 @@ def streamline(command):
     return subprocess.call(args, stdout=subprocess.PIPE)
 
 
-def LR_collection(lr_session, args):
+def LR_collection(hyper_lr, args):
     # perform a full Live Response collection
+    lr_session = hyper_lr.go_live()
 
     def lr_cleanup(lr_session):
         try:
@@ -679,7 +356,26 @@ def LR_collection(lr_session, args):
     localfile = None
     for dir_item in lr_session.list_directory(outputdir):
         if 'ARCHIVE' in dir_item['attributes'] and  dir_item['filename'].endswith('7z'):
-            localfile = getFile_with_timeout(lr_session, args.sensor, outputdir+dir_item['filename'], dir_item['filename'])
+            if hyper_lr.lerc_session:
+                hyper_lr.lerc_session.Upload(outputdir+dir_item['filename'])
+                command = hyper_lr.lerc_session.check_command()
+                # wait for the client to complete the command
+                print(" ~ Issued upload command to lerc. Waiting for command to finish..")
+                if hyper_lr.lerc_session.wait_for_command(command):
+                    print(" ~ lerc command complete. Streaming LR from lerc server..")
+                    command = hyper_lr.lerc_session.get_results(file_path=dir_item['filename'])
+                    if command:
+                        print("[+] lerc command results: ")
+                        pprint.pprint(command, indent=6)
+                        file_path = command['server_file_path']
+                        filename = file_path[file_path.rfind('/')+1:]
+                        print()
+                        print("[+] Wrote {}".format(dir_item['filename']))
+                        localfile = dir_item['filename']
+                else:
+                    LOGGER.error("problem waiting for lerc client to complete command")
+            else:
+                localfile = getFile_with_timeout(lr_session, args.sensor, outputdir+dir_item['filename'], dir_item['filename'])
 
     # HERE need to delete our LR files from sensor
     lr_cleanup(lr_session)
@@ -692,10 +388,11 @@ def LR_collection(lr_session, args):
     return
 
 
-def Collection(cb, args):
+def Collection(hyper_lr, args):
     if args.info:
         print()
-        sensor = cb.select(Sensor).where("hostname:{}".format(args.sensor)).one()
+        #sensor = cb.select(Sensor).where("hostname:{}".format(args.sensor)).one()
+        sensor = hyper_lr.sensor
         print("Sensor object - {}".format(sensor.webui_link))
         print("-------------------------------------------------------------------------------\n")
         print("\tcb_build_version_string: {}".format(sensor.build_version_string))
@@ -719,14 +416,16 @@ def Collection(cb, args):
             print("\t\t{}".format(ni))
         if sensor.status == "Online":
             print("\n\t+ Tring to get logical drives..")
-            lr_session = sensor.lr_session()
+            #lr_session = sensor.lr_session()
+            lr_session = hyper_lr.go_live()
             print("\t\tAvailable Drives: %s" % ' '.join(lr_session.session_data.get('drives', [])))
             lr_session.close()
             lr_session = None
         print()
-        return 0
+        return True
 
-    lr_session = go_live(cb.select(Sensor).where("hostname:{}".format(args.sensor)).one())
+    #lr_session = go_live(cb.select(Sensor).where("hostname:{}".format(args.sensor)).one())
+    lr_session = hyper_lr.go_live()
 
     if lr_session:
         if args.multi_collect:
@@ -767,7 +466,7 @@ def Collection(cb, args):
                     except Exception as e:
                         print("[!] Error: {}".format(str(e)))
             if full_collect == 'True':
-               return LR_collection(lr_session, args) 
+               return False #LR_collection(hyper_lr, args) 
 
         elif args.filepath:
             getFile_with_timeout(lr_session, args.sensor, args.filepath)
@@ -903,7 +602,7 @@ def Collection(cb, args):
                     print("[+] scheduledTaskOps.ps1 already on host.")
                 else:
                     LOGGER.error(str(e))
-                    return 1
+                    sys.exit(1)
             # execute
             cmd = "powershell.exe C:\\windows\\carbonblack\\scheduledTaskOps.ps1 -Get"
             print("[+] Executing: {}".format(cmd))
@@ -914,8 +613,8 @@ def Collection(cb, args):
             print()
  
         else:
-            return LR_collection(lr_session, args)
-    return 0
+            return False #LR_collection(hyper_lr, args)
+    return True
 
 
 def Remediation(cb, args):
@@ -1035,7 +734,7 @@ def Remediation(cb, args):
         if dirpaths is not None:
             #print("[INFO] Directory deletion currently disabled")
             for dirpath in dirpaths:
-                if insinstance(dirpath, tuple):
+                if isinstance(dirpath, tuple):
                     dirpath = dirpath[1] 
                 command_str = "powershell.exe Remove-Item {} -Force -Recurse".format(dirpath)
                 result = lr_session.create_process(command_str)
@@ -1065,8 +764,8 @@ def Remediation(cb, args):
                     print()
  
     return 0
-
-
+     
+ 
 def sensor_search(profiles, sensor_name):
     if not isinstance(profiles, list):
         LOGGER.error("profiles argument is not a list")
@@ -1076,7 +775,7 @@ def sensor_search(profiles, sensor_name):
         cb = CbResponseAPI(profile=profile)
         try:
             cb.select(Sensor).where("hostname:{}".format(sensor_name)).one()
-            cb_finds.append(cb)
+            cb_finds.append((cb, profile))
             LOGGER.info("Found a sensor by this name in {} environment".format(profile))
         except TypeError as e:
             # Appears to be bug in cbapi library here -> site-packages/cbapi/query.py", line 34, in one
@@ -1120,7 +819,7 @@ def proc_search_environments(profiles, proc_guid):
         LOGGER.error("{} is not in the format of a process guid".format(proc_guid))
         return False
 
-    stored_exceptions = []
+    #stored_exceptions = []
     for profile in profiles:
         cb = CbResponseAPI(profile=profile)
         try:
@@ -1128,20 +827,21 @@ def proc_search_environments(profiles, proc_guid):
             LOGGER.info("process found in {} environment".format(profile))
             return proc
         except Exception as e:
-            stored_exceptions.append((profile, str(e)))
+            #stored_exceptions.append((profile, str(e)))
             pass
 
-    LOGGER.error("Didn't find this process guid in any environments. Exceptions: {}".format(stored_exceptions))
+    LOGGER.error("Didn't find this process guid in any environments.")
     return False
 
 
 def main():
 
     parser = argparse.ArgumentParser(description="An interface to our CarbonBlack environments")
-    profiles = auth.CredentialStore("response").get_profiles()
-    parser.add_argument('-e', '--environment', choices=profiles,
-                        help='specify an environment you want to work with. Default=All defined environment profiles')
-    parser.add_argument('--debug', action='store_true', help='print debugging info')
+
+    #profiles = auth.CredentialStore("response").get_profiles()
+    parser.add_argument('-e', '--environment', choices=auth.CredentialStore("response").get_profiles(),
+                        help='specify an environment you want to work with. Default=All \'production\' environments')
+    #parser.add_argument('--debug', action='store_true', help='print debugging info')
     #parser.add_argument('--warnings', action='store_true',
     #                         help="Warn before printing large executions")
 
@@ -1163,8 +863,8 @@ def main():
                              help="Warn before printing large executions")
     parser_proc.add_argument('-w', '--walk-tree', action='store_true',
                              help="walk and analyze the process tree")
-    parser_proc.add_argument('-d', '--detection', action='store_true',
-                             help="show detections that would result in ACE alerts")
+    #parser_proc.add_argument('-d', '--detection', action='store_true',
+    #                         help="show detections that would result in ACE alerts")
     parser_proc.add_argument('-i', '--proc-info', action='store_true',
                              help="show binary and process information")
     parser_proc.add_argument('-c','--show-children', action='store_true',
@@ -1177,10 +877,12 @@ def main():
                              help="print registry modifications")
     parser_proc.add_argument('-um', '--unsigned-modloads', action='store_true',
                              help="print unsigned modloads")
+    parser_proc.add_argument('-ml', '--modloads', action='store_true',
+                             help="print modloads")
     parser_proc.add_argument('-cp', '--crossprocs', action='store_true',
                              help="print crossprocs")
-    parser_proc.add_argument('-intel', '--intel-hits', action='store_true',
-                             help="show intel (feed/WL) hits that do not result in ACE alerts")
+    #parser_proc.add_argument('-intel', '--intel-hits', action='store_true',
+    #                         help="show intel (feed/WL) hits that do not result in ACE alerts")
     parser_proc.add_argument('--no-analysis', action='store_true',
                              help="Don't fetch and print process activity")
     parser_proc.add_argument('--json', action='store_true', help='output process summary in json')
@@ -1271,11 +973,13 @@ def main():
         print("\n*****\n\n")
         parser.parse_args(['-h'])
 
-    args.debug = True
-    if args.debug:
-        root = logging.getLogger()
-        root.addHandler(logging.StreamHandler())
-        logging.getLogger("cbapi").setLevel(logging.ERROR)
+    #args.debug = True
+    #if args.debug:
+    # configure some more logging
+    root = logging.getLogger()
+    root.addHandler(logging.StreamHandler())
+    logging.getLogger("cbapi").setLevel(logging.ERROR)
+    logging.getLogger("lerc_api").setLevel(logging.INFO)
 
     print(time.ctime() + "... starting")
 
@@ -1283,6 +987,7 @@ def main():
     if 'https_proxy' in os.environ:
         del os.environ['https_proxy']
 
+    ''' All VxStream related stuff may be removed in a future version '''
     if args.command == 'vxdetect':
         cb = CbResponseAPI(profile='vxstream')
         process_list = parse_vxstream_report(cb, args.vxstream_report)
@@ -1290,47 +995,38 @@ def main():
             print()
             print(process_list)
         print()
-        detections = query_vx_detection_db(process_list)
-        print(" === ACE Detections ===")
-        for process in process_list:
-            for detection in detections[process.id]:
-                print("\n\t-------------------------")
-                print("  (ACE) {} on {} (PID:{}) ~ {}".format(detection, process.proc_name,
-                                                      process.pid, process.id))
-        print()
         return 0
 
-    # Try and select the correct environment and perform some checks
-    cb = cbash = cbvalv = None
-    if args.environment:
+    profile = None
+    profiles = []
+    if args.environment: 
         print("Using {} environment ..".format(args.environment))
-        #credentials = auth.CredentialStore("response").get_credentials(profile=args.environment)
-        cb = CbResponseAPI(profile=args.environment) 
-        if args.command == 'proc':
-            #cbapi does not check for guids and doesn't error correctly
-            regex = re.compile('[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', re.I)
-            if regex.match(args.process) == None:
-                LOGGER.error("{} is not in the format of a process guid".format(args.process))
-                return 1
-            proc = cb.select(Process, args.process, force_init=True)
+        profiles.append(args.environment)
     else:
-        if args.command == 'proc':
-            proc = proc_search_environments(profiles, args.process)
-            if not proc:
+        # a little hack for getting our environment type variable defined
+        default_profile = auth.default_profile
+        default_profile['envtype'] = 'production'
+        for profile in auth.CredentialStore("response").get_profiles():
+            credentials = auth.CredentialStore("response").get_credentials(profile=profile)
+            if credentials['envtype'].lower() == 'production':
+                profiles.append(profile)
+
+
+    if args.command == 'collect' or args.command == 'remediate' or args.command == 'enumerate_usb':
+        cb_results = sensor_search(profiles, args.sensor)
+        if not isinstance(cb_results, list):
+            # an error occured
+            return cb_results
+        else:
+            if not cb_results:
+                LOGGER.info("A sensor with hostname {} wasn't found in any environments".format(args.sensor))
+                return 0
+            elif len(cb_results) > 1:
+                LOGGER.error("A sensor by hostname {} was found in multiple environments".format(args.sensor))
                 return 1
-        elif args.command == 'collect' or args.command == 'remediate' or args.command == 'enumerate_usb':
-            cb_results = sensor_search(profiles, args.sensor)
-            if not isinstance(cb_results, list):
-                # an error occured
-                return cb_results
-            else:
-                if not cb_results:
-                    LOGGER.info("A sensor with hostname {} wasn't found in any environments".format(args.sensor))
-                    return 0
-                elif len(cb_results) > 1:
-                    LOGGER.error("A sensor by hostname {} was found in multiple environments".format(args.sensor))
-                    return 1
-                cb = cb_results[0]
+            results = cb_results[0]
+            profile = results[1]
+            cb = results[0]
 
     # Show USB Regmod activity
     if args.command == 'enumerate_usb':
@@ -1342,15 +1038,33 @@ def main():
             q = CBquery(args.environment)
             q.process_query(args)
         else: # query all environments
-            for profile in auth.CredentialStore("response").get_profiles():
+            for profile in profiles:
                 print("\nSearching {} environment..".format(profile))
                 q = CBquery(profile=profile)
                 q.process_query(args)
         return 0
 
+    # lazy hack
+    config = {}
+    try:
+        default_profile = auth.default_profile
+        default_profile['lerc_install_cmd'] = None
+        config = auth.CredentialStore("response").get_credentials(profile=profile)
+    except:
+        pass
+
     # Collection #
     if args.command == 'collect':
-        return Collection(cb, args)
+        sensor = cb.select(Sensor).where("hostname:{}".format(args.sensor)).one()
+        hyper_lr = hyperLiveResponse(sensor)
+        result = Collection(hyper_lr, args)
+        if not result:
+            # perform full live response collection
+            if config['lerc_install_cmd']:
+                hyper_lr.deploy_lerc(config['lerc_install_cmd'])
+            else:
+                LOGGER.info("{} environment is not configrued for LERC deployment".format(profile))
+            return LR_collection(hyper_lr, args)
 
     # Remediation #
     if args.command == 'remediate':
@@ -1359,7 +1073,79 @@ def main():
     # Process Investigation #
     process_tree = None
     if args.command == 'proc':
-        process_tree = process_event_analysis(proc, args)
+        proc = proc_search_environments(profiles, args.process)
+        if not proc:
+            return 1
+        sp = SuperProcess(proc)
+        if args.proc_info:
+            print(sp)
+        elif args.walk_tree:
+            sp.walk_process_tree()
+            print()
+            print(sp.process_tree)
+
+            for process in sp.process_tree:
+                if process.is_suppressed:
+                    print("+  [DATA SUPPRESSED] {} (PID:{}) - {}".format(process.name, process.pid,
+                                                                         process.id))
+                    continue
+
+                print("+  {} (PID:{}) - {}".format(process.name, process.pid, process.id))
+                if args.filemods:
+                    process.print_filemods()
+                    args.no_analysis = True
+                if args.netconns:
+                    process.print_netconns()
+                    args.no_analysis = True
+                if args.regmods:
+                    process.print_regmods()
+                    args.no_analysis = True
+                if args.unsigned_modloads:
+                    process.print_unsigned_modloads()
+                    args.no_analysis = True
+                if args.modloads:
+                    process.print_modloads()
+                    args.no_analysis = True
+                if args.crossprocs:
+                    process.print_crossprocs()
+                    args.no_analysis = True
+
+                if args.no_analysis != True:
+                    if args.json:
+                        print(process.events_to_json())
+                    else:
+                        process.default_print()
+        else:
+            print()
+            print(sp.process_tree)
+            if args.filemods:
+                sp.print_filemods()
+                args.no_analysis = True
+            if args.netconns:
+                sp.print_netconns()
+                args.no_analysis = True
+            if args.regmods:
+                sp.print_regmods()
+                args.no_analysis = True
+            if args.unsigned_modloads:
+                sp.print_unsigned_modloads()
+                args.no_analysis = True
+            if args.modloads:
+                sp.print_modloads()
+                args.no_analysis = True
+            if args.crossprocs:
+                sp.print_crossprocs()
+                args.no_analysis = True
+            if args.show_children:
+                sp.print_child_events()
+                args.no_analysis = True
+
+            if args.no_analysis != True:
+                if args.json:
+                    print(sp.events_to_json())
+                else:
+                    sp.default_print()
+
         
     print()
     return 0
