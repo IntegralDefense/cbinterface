@@ -8,9 +8,9 @@ from cbapi.response import models
 logging.getLogger(__name__)
 
 try:
-    from library import lerc_api
+    from ..library import lerc_api
 except:
-    logging.warning("failed to import lerc_api. Will fallback to pure cb live response")
+    logging.debug("failed to import lerc_api. Will fallback to pure cb live response")
 
 
 ## -- Live Response (collect/remediate) -- ##

@@ -4,7 +4,7 @@ import datetime
 from cbapi.response import models
 from cbapi.errors import ApiError, ObjectNotFoundError, TimeoutError, MoreThanOneResultError
 
-from modules.helpers import eastern_time
+from .helpers import eastern_time
 
 class ProcessWrapper():
     def __init__(self, process, suppressed_data={}):

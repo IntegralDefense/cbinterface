@@ -3,7 +3,7 @@ import datetime
 import logging
 from dateutil import tz
 from cbapi.response import *
-from modules.helpers import eastern_time
+from .helpers import eastern_time
 
 
 ## -- Process querying functions -- ##

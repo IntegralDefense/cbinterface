@@ -14,7 +14,6 @@ import subprocess
 import json
 import glob
 import logging
-import pymysql
 
 from dateutil import tz
 from queue import Queue
@@ -26,10 +25,10 @@ from cbapi.response import *
 from cbapi import live_response_api
 from cbapi.errors import ApiError, ObjectNotFoundError, TimeoutError, MoreThanOneResultError
 
-from modules.process import SuperProcess
-from modules.query import CBquery
-from modules.helpers import eastern_time
-from modules.response import hyperLiveResponse
+from cbinterface.modules.process import SuperProcess
+from cbinterface.modules.query import CBquery
+from cbinterface.modules.helpers import eastern_time
+from cbinterface.modules.response import hyperLiveResponse
 
 # Not using logging.BasicConfig because it turns on the cbapi logger
 LOGGER = logging.getLogger('cbinterface')
@@ -224,21 +223,6 @@ def get_vxtream_cb_guids(report):
 
     process_list = parse_vxstream_report(cb, report)
     return [ p.id for p in process_list ]
-
-
-def query_vx_detection_db(process_list):
-    ''' TODO: delete all this functionaliy or move db items to a config file '''
-    db = pymysql.connect("removed","removed","removed","removed")
-    cursor = db.cursor(pymysql.cursors.DictCursor)
-    results_dict = {}
-    for process in process_list:
-        query = "SELECT * FROM splunk_detections WHERE proc_guid='{}'".format(process.id)
-        cursor.execute(query)
-        results_dict[process.id] = []
-        for row in cursor:
-            results_dict[process.id].append(row['hunt_name'])
-    db.close()
-    return results_dict
 
 
 ## -- Live Response (collect/remediate) -- ##
@@ -1003,20 +987,13 @@ def main():
     if 'https_proxy' in os.environ:
         del os.environ['https_proxy']
 
+    ''' All VxStream related stuff may be removed in a future version '''
     if args.command == 'vxdetect':
         cb = CbResponseAPI(profile='vxstream')
         process_list = parse_vxstream_report(cb, args.vxstream_report)
         if args.print_process_tree:
             print()
             print(process_list)
-        print()
-        detections = query_vx_detection_db(process_list)
-        print(" === ACE Detections ===")
-        for process in process_list:
-            for detection in detections[process.id]:
-                print("\n\t-------------------------")
-                print("  (ACE) {} on {} (PID:{}) ~ {}".format(detection, process.proc_name,
-                                                      process.pid, process.id))
         print()
         return 0
 

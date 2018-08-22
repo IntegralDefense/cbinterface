@@ -25,7 +25,7 @@ with open(path.join(here, 'README.md'), encoding='utf-8') as f:
     long_description = f.read()
 
 setup(
-    name='cbinterface',
+    name='e-cbinterface',
 
     # Versions should comply with PEP440.  For a discussion on single-sourcing
     # the version across setup.py and the project code, see
@@ -80,20 +80,20 @@ setup(
 
     # You can just specify the packages manually here if your project is
     # simple. Or you can use find_packages().
-    packages=['modules', 'lr_tools'],
+    packages=['cbinterface', 'cbinterface.modules'],
 
-
+    include_package_data=True,
     # Alternatively, if you want to distribute just a my_module.py, uncomment
     # this:
-    py_modules=["cbinterface"],
+    #py_modules=["cbinterface"],
 
     # List run-time dependencies here.  These will be installed by pip when
     # your project is installed. For an analysis of "install_requires" vs pip's
     # requirements files see:
     # https://packaging.python.org/en/latest/requirements.html
-    install_requires=['cbapi', 'pymysql'],
+    install_requires=['cbapi'],
 
     entry_points={
-        'console_scripts': ['cbinterface=cbinterface:main'],
+        'console_scripts': ['cbinterface=cbinterface.cbinterface:main'],
     }
 )
