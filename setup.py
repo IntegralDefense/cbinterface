@@ -14,7 +14,7 @@ from setuptools import setup, find_packages
 from codecs import open
 from os import path
 
-__version__ = "1.0.0"
+__version__ = "1.0.1"
 description = "command line tool for interfacing with multiple carbonblack " \
               "environments to perform analysis and live response functions"
 
@@ -34,6 +34,7 @@ setup(
 
     description=description,
     long_description=long_description,
+    long_description_content_type='text/markdown',
 
     # The project's main homepage.
     url='https://github.com/IntegralDefense/cbinterface',
