@@ -169,13 +169,9 @@ Remediate an infected host:
     Mon Oct  9 16:44:02 2017...Done.
 
 
-## Requirements
-
-```bash
-pip install cbapi
-```
-
 ## Installation
+
+You can use pip to install cbinterface. Pip will try and install cbapi if it's not already installed.
 
 ```bash
 pip install cbinterface

@@ -1,33 +1,33 @@
 #!/data/home/carbonblack/env3/bin/python3
 #/data/home/smcfeely/dev/env3/bin/python3
 
-import os
-import re
-import sys
-import signal
-import time
-import pprint
 import argparse
 import datetime
-import shlex
-import subprocess
-import json
 import glob
+import json
 import logging
+import os
+import pprint
+import re
+import shlex
+import signal
+import subprocess
+import sys
+import time
 
+from configparser import ConfigParser
 from dateutil import tz
 from queue import Queue
 from threading import Thread
-from configparser import ConfigParser
 
 from cbapi import auth
-from cbapi.response import *
 from cbapi import live_response_api
 from cbapi.errors import ApiError, ObjectNotFoundError, TimeoutError, MoreThanOneResultError
+from cbapi.response import *
 
+from cbinterface.modules.helpers import eastern_time
 from cbinterface.modules.process import SuperProcess
 from cbinterface.modules.query import CBquery
-from cbinterface.modules.helpers import eastern_time
 from cbinterface.modules.response import hyperLiveResponse
 
 # Not using logging.BasicConfig because it turns on the cbapi logger
