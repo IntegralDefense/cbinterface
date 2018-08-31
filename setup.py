@@ -14,7 +14,7 @@ from setuptools import setup, find_packages
 from codecs import open
 from os import path
 
-__version__ = "1.0.1"
+__version__ = "1.0.2"
 description = "command line tool for interfacing with multiple carbonblack " \
               "environments to perform analysis and live response functions"
 
@@ -95,6 +95,6 @@ setup(
     install_requires=['cbapi'],
 
     entry_points={
-        'console_scripts': ['cbinterface=cbinterface.cbinterface:main'],
+        'console_scripts': ['cbinterface=cbinterface:main'],
     }
 )

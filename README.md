@@ -174,7 +174,7 @@ Remediate an infected host:
 You can use pip to install cbinterface. Pip will try and install cbapi if it's not already installed.
 
 ```bash
-pip install cbinterface
+pip3 install cbinterface
 ```
 
 ## Getting Started
