@@ -77,6 +77,16 @@ class ProcessWrapper():
     def name(self, name):
         self.__name = str(name)
 
+    def show_ancestry(self):
+        def _print_parent_details(proc, depth):
+            try:
+                start_time = proc.start or "<unknown>"
+                print("%s%s:  %s %s - %s" % ('  '*(depth + 1), start_time, proc.cmdline,
+                                             "(suppressed)" if proc.suppressed_process else "", proc.id))
+            except Exception as e:
+                return
+        print("  === Process Ancestry ===\n")
+        self.proc.walk_parents(_print_parent_details)
 
     def events_to_json(self):
         process_raw_sum_data = self.proc._cb.get_object("/api/v1/process/{0}".format(self.proc.id))
