@@ -623,7 +623,7 @@ def Remediation(cb, args):
     lr_session = go_live(sensor)
     if args.isolate:
         if sensor.is_isolating:
-            print("[+] Removing isoltion ..")
+            print("[+] Removing isolation ..")
             sensor.unisolate()
         else:
             print("[+] Isolating Sensor ..")
