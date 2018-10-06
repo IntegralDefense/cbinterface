@@ -1,4 +1,10 @@
 #!/data/home/carbonblack/env3/bin/python3
+#/usr/bin/env python3
+
+"""
+This file is only included in the cbinterface repo 
+for the purpose of convenient testing
+"""
 
 import re
 import sys

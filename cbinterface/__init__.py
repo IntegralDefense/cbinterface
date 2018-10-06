@@ -30,7 +30,7 @@ from cbinterface.modules.process import SuperProcess
 from cbinterface.modules.query import CBquery
 from cbinterface.modules.response import hyperLiveResponse
 
-# Not using logging.BasicConfig because it turns on the cbapi logger
+# logging 
 LOGGER = logging.getLogger('cbinterface')
 LOGGER.setLevel(logging.DEBUG)
 LOGGER.propagate = False
@@ -40,10 +40,12 @@ handler.setFormatter(formatter)
 handler.setLevel(logging.DEBUG)
 LOGGER.addHandler(handler)
 
-logging.getLogger('lerc_api').setLevel(logging.INFO)
-
 # MAX number of threads performing splunk searches
 MAX_SEARCHES = 4
+
+# Configuration file
+HOME_DIR = os.path.dirname(os.path.realpath(__file__))
+CONFIG_PATH = os.path.join(HOME_DIR, 'etc', 'config.ini')
 
 
 def clean_exit(signal, frame):
@@ -73,158 +75,6 @@ def enumerate_usb(cb, host, start_time=None):
                     #print(device_info)
                     
 
-## -- Intel/detection helpers -- ##
-def perform_splunk_search(splunk_command, debug=None):
-
-    splunkargs = shlex.split(splunk_command)
-    splunk_output = None
-    if debug:
-        LOGGER.debug("Searching splunk with: {}".format(splunk_command))
-    try:
-        splunk_output = subprocess.check_output(splunkargs)
-        return splunk_output
-
-    except subprocess.CalledProcessError as e:
-        # error but continue 
-        LOGGER.error("returncode: " + str(e.returncode) + "; with output: "
-              + str(e.output) + "; for cmd: " + str(e.cmd) )
-        return None
-
-
-def parse_splunk_results(results, debug=None):
-    result_dict = json.loads(results.decode("utf-8"))
-    result_list = result_dict['result']
-    hits = {'feed_hits': [], 'watchlist_hits': []}
-    for result in result_list:
-        full_result = json.loads(result['_raw'])
-        # CB redundant logging causes duplicates on feed hits sometimes
-        if 'feed' in result['notification_type']:
-            query_string = None
-            feed_name = None
-            feed_link = None
-            try:
-                query_string = full_result['ioc_query_string']
-            except KeyError as err:
-                if debug:
-                    LOGGER.debug("KeyError: " + str(err))
-            try:
-                feed_name = full_result['feed_name']
-            except KeyError as err:
-                if debug:
-                    LOGGER.debug("KeyError: " + str(err))
-            try:
-                feed_link = full_result['docs'][0]['alliance_link_'+feed_name]
-            except KeyError as err:
-                if debug:
-                    LOGGER.debug("KeyError: " + str(err))
-            if len(full_result['docs']) > 1:
-                LOGGER.warn("result document list greater than one")
-            if feed_name is not None and feed_link is not None:
-                hits['feed_hits'].append((feed_name, feed_link, query_string))
-        elif 'watchlist' in result['notification_type']:
-            # for some reasone, some watchlists log both watchlist.hit.process
-            # and watchlist.storage.hit.process
-            if full_result['watchlist_name'] not in hits['watchlist_hits']:
-                hits['watchlist_hits'].append(full_result['watchlist_name'])
-        else:
-            LOGGER.error("Problem parsing splunk results.")
-    return hits
-
-
-def splunk_search_worker(search_queue, result, debug=None):
-    while not search_queue.empty():
-        search_data = search_queue.get()
-        proc_guid = search_data[0]
-        search_text = search_data[1]
-        if debug:
-            LOGGER.debug("Kicking intel search for {} ...".format(proc_guid))
-        result[proc_guid] = perform_splunk_search(search_text, debug)
-        search_queue.task_done()
-    return True
-
-
-def build_vx_queries(query_info):
-    # create the list of queries that we will make with the CB api
-    if not isinstance(query_info, ProcessList):
-        print("[ERROR] build_queries: input type not supported")
-        sys.exit(1)
-
-    queries = []
-    parent_name = None # keep track
-    for process in query_info:
-        pid_has_query = False
-        for child_proc in process.children:
-            queries.append("process_name:{} process_pid:{} childproc_name:{}".format(process.proc_name,
-                process.pid, child_proc.proc_name))
-            pid_has_query = True
-            break
-
-        if pid_has_query is False:
-            if parent_name: # not None
-                queries.append("process_name:{} process_pid:{} parent_name:{}".format(process.proc_name,
-                    process.pid, parent_name))
-            else: # this query is not specific enough
-                queries.append("process_name:{} process_pid:{}".format(process.proc_name,
-                    process.pid))
-        parent_name = process.proc_name
-    return queries
-
-
-def get_vxstream_cb_guids(cb, vx_process_list):
-    ProcessQueryResults = []
-    for query in build_vx_queries(vx_process_list):
-        ProcessQueryResults = cb.select(Process).where(query).group_by('id')
-        for proc in ProcessQueryResults:
-            for vxp in vx_process_list:
-                if int(proc.process_pid) == int(vxp.pid):
-                    vxp.id = proc.id
-                    break
-    return 
-
-
-def parse_vxstream_report(cb, report_path):
-    json_report = None
-    try:
-        with open(report_path, 'r') as fp:
-            json_report = json.load(fp)
-    except Exception as e:
-        print("unable to load json from {}: {}".format(args.report_path, str(e)))
-        sys.exit(1)
-
-
-    process_list = ProcessList()
-    process_list_json = json_report["analysis"]["runtime"]["targets"]["target"]
-
-    if process_list_json:
-        if isinstance(process_list_json, dict):
-            process_list_json = [process_list_json]
-
-        for process in process_list_json:
-            command = process["name"] + " " + process["commandline"]
-            process_name = process["name"]
-            pid = process["pid"]
-            parent_pid = process["parentpid"]
-            #print("{} @ {}".format(pid, process["date"]))
-            new_process = ProcessWrapper(command, pid, parent_pid, process_name, None)
-            process_list.add_process(new_process)
-
-    # call structure() to build process relationship tree
-    process_list.structure() # come back to investigate why returning this output breaks script
-    get_vxstream_cb_guids(cb, process_list)
-    return process_list
-
-
-def get_vxtream_cb_guids(report):
-    try:
-        cb = CbResponseAPI(profile='vxstream')
-    except:
-        LOGGER.error("Failure to get CbResponseAPI with 'vxstream' profile")
-        return 1
-
-    process_list = parse_vxstream_report(cb, report)
-    return [ p.id for p in process_list ]
-
-
 ## -- Live Response (collect/remediate) -- ##
 def go_live(sensor):
     start_time = time.time()
@@ -248,118 +98,108 @@ def go_live(sensor):
     return lr_session
 
 
-def getFile_with_timeout(lr_session, sensor, filepath, localfname=None):
-    print("~ downloading {}".format(filepath))
-    raw = lr_session.get_raw_file(filepath, timeout=3600)
-    content = raw.read()
-    raw.close()
-    if localfname is None:
-        localfname = sensor + '_' + filepath.rsplit("\\",1)[1]
-    with open(localfname,'wb') as f:
-        f.write(content)
-    print("+ wrote {}".format(localfname))
-    return localfname
-
-
-def wait_for_process_to_finish(lr_session, process_name):
-    # THIS SHOULDN'T BE NECCESSARY GRR - https://github.com/carbonblack/cbapi-python/issues/97
-    print(" - checking if "+process_name+" is running")
-    running = None
-
-    for process in lr_session.list_processes():
-        if process_name in process['command_line']:
-            running = True
-            print(" - {} still running..".format(process_name))
-
-    if running:
-        print(" - waiting for {} to finish...".format(process_name))
-        while(running):
-            time.sleep(30)
-            running = False
-            for process in lr_session.list_processes():
-                if process_name in process['command_line']:
-                    running = True
-                    print(" - {} still running..".format(process_name))
-
-    return
-
-
-def streamline(command):
-    args = shlex.split(command)
-    return subprocess.call(args, stdout=subprocess.PIPE)
-
-
 def LR_collection(hyper_lr, args):
-    # perform a full Live Response collection
+    """This custom function implements a proprietary IntegralDefense Live Response collection package.
+    'None' will be immediately returned if you do no have this package. The location of the package is
+    assumed to be defined by a 'lr_path' variable in the configuration file.
+
+    :dependencies lr_package_path: Path to the ID LR package on system cbinterface is running
+    :dependencies streamline_path: Path to proprietary post-collection LR streamline package
+
+    :returns: True on success, False on Failure, None if a requirement is missing
+    """
+
+    # Get configuration items
+    config = ConfigParser()
+    config.read(CONFIG_PATH)
+    lr_analysis_path = config['ID-LR']['lr_package_path']
+    if not os.path.exists(lr_analysis_path):
+        LOGGER.info("LR package not defined")
+        return None
+    lr_filename = lr_analysis_path[lr_analysis_path.rfind('/')+1:]
+    lr_dirname = lr_filename[:lr_filename.rfind('.')]
+    sensor_dir = config['ID-LR']['sensor_path']
+    if not sensor_dir:
+        LOGGER.info("sensor_dir not defined in configuration. Using C:\\")
+        sensor_dir = "C:\\" # Default
+    streamline_path = config['ID-LR']['streamline_path']
+    if not os.path.exists(streamline_path):
+        LOGGER.info("Path to streamline.py doesn't exist.")
+        return None    
+    collect_cmd = config['ID-LR']['collect_cmd']
+    if not collect_cmd:
+        LOGGER.info("Collection command missing")
+        return None
+
     lr_session = hyper_lr.go_live()
 
     def lr_cleanup(lr_session):
+        # delete our LR tools
         try:
-            dir_output = lr_session.list_directory("C:\\")
+            dir_output = lr_session.list_directory(sensor_dir)
             for dir_item in dir_output:
-                if 'DIRECTORY' in dir_item['attributes'] and dir_item['filename'] == 'lr':
-                    print("[+] Found existing lr directory.. deleting")
-                    command_str = "powershell.exe Remove-Item {} -Force -Recurse".format("C:\\lr")
+                if 'DIRECTORY' in dir_item['attributes'] and dir_item['filename'] == lr_dirname:
+                    print("[+] Found existing LR directory.. deleting")
+                    command_str = "powershell.exe Remove-Item {} -Force -Recurse".format(sensor_dir + lr_dirname)
                     result = lr_session.create_process(command_str)
                     if result != b'':
-                        LOGGER.warn(" ! Problem  deleting {}".format("C:\\lr"))
-                if 'ARCHIVE' in dir_item['attributes'] and dir_item['filename'] == 'lr.exe' \
-                    or dir_item['filename'] == 'cbilr.exe':
+                        LOGGER.warn(" ! Problem  deleting {}".format(sensor_dir + lr_dirname))
+                if 'ARCHIVE' in dir_item['attributes'] and dir_item['filename'] == lr_filename:
                     print("[+] Existing LR package found.. deleting..")
                     try:
-                        lr_session.delete_file("C:\\" + dir_item['filename'])
+                        lr_session.delete_file(sensor_dir + dir_item['filename'])
                     except TypeError as e:
-                        if 'startswith first arg must be bytes' in e:
-                            LOGGER.warn("Error deleting lr.exe.. trying to move on")
+                        if 'startswith first arg must be bytes' in e: # might be fixed in newer cbapi versions
+                            LOGGER.warn("Error deleting {}.. trying to move on".format(lr_filename))
         except live_response_api.LiveResponseError as e:
             if 'ERROR_PATH_NOT_FOUND' not in str(e):
                 print("[ERROR] LiveResponseError: {}".format(e))
-                return 1
+                return False
 
-    #Check if LR.exe and/or lr dir already on host. Delete everything if so
+    # LR remnants already on host?
     lr_cleanup(lr_session)
 
-    # Put latest LR.exe on host
-    lr_analysis_path = "/opt/host_analysis/cblr/lr.exe"
-    # https://community.carbonblack.com/thread/7740
-    #lr_analysis_path = "/opt/host_analysis/cblr/lrcbi.exe"
     print("[+] Dropping latest LR on host..")
     filedata = None
     with open(lr_analysis_path, 'rb') as f: 
         filedata = f.read()
     try:
-        lr_session.put_file(filedata, "C:\\lr.exe")
+        lr_session.put_file(filedata, sensor_dir + lr_filename)
     except Exception as e:
-        # If we make it here and there is still and lr.exe on the host then something went wrong
-        # and we will work with the existing lr.exe
+        # If 'ERROR_FILE_EXISTS' in errmsg, log the error, but try to continue with existing package
         if 'ERROR_FILE_EXISTS' not in str(e):
             LOGGER.error("Unknown Error: {}".format(str(e)))
-            return 1
+            return False
     
     # execute lr.exe to extract files
-    unzip = "C:\\lr.exe -o \'C:\\' -y"
-    print("[+] Extracting LR.exe..")
+    # unzip = "C:\\lr.exe -o \'C:\\' -y"
+    extract_cmd = " -o \'" + sensor_dir + "' -y"
+    unzip = sensor_dir + lr_filename + extract_cmd
+    print("[+] Extracting LR ..")
     lr_session.create_process(unzip)
     
-    # execute collect.bat
-    collect = "C:\\lr\\win32\\tools\\collect.bat"
+    # execute collection
+    #collect = "C:\\lr\\win32\\tools\\collect.bat"
+    collect = sensor_dir + lr_dirname + collect_cmd
+    collect_filename = collect_cmd[collect_cmd.rfind('\\')+1:]
     time.sleep(1)
     print("[+] Executing collect.bat..")
     start_time = time.time()
     lr_session.create_process(collect, wait_for_output=False, wait_for_completion=False) #, wait_timeout=900)
-    wait_for_process_to_finish(lr_session, "collect.bat")
+    hyper_lr.wait_for_process_to_finish(collect_filename)
     collect_duration = datetime.timedelta(minutes=(time.time() - start_time))
     print("[+] Collect completed in {}".format(collect_duration))
 
-    # Collect output 7z file
-    outputdir = "C:\\lr\\win32\\output\\"
+    # Collect resulting output file
+    outputdir = sensor_dir + lr_dirname + "\\win32\\output\\"
     localfile = None
     for dir_item in lr_session.list_directory(outputdir):
         if 'ARCHIVE' in dir_item['attributes'] and  dir_item['filename'].endswith('7z'):
+            # use lerc, if available
             if hyper_lr.lerc_session:
                 hyper_lr.lerc_session.Upload(outputdir+dir_item['filename'])
                 command = hyper_lr.lerc_session.check_command()
-                # wait for the client to complete the command
+                # wait for client to complete the command
                 print(" ~ Issued upload command to lerc. Waiting for command to finish..")
                 if hyper_lr.lerc_session.wait_for_command(command):
                     print(" ~ lerc command complete. Streaming LR from lerc server..")
@@ -375,245 +215,16 @@ def LR_collection(hyper_lr, args):
                 else:
                     LOGGER.error("problem waiting for lerc client to complete command")
             else:
-                localfile = getFile_with_timeout(lr_session, args.sensor, outputdir+dir_item['filename'], dir_item['filename'])
+                localfile = hyper_lr.getFile_with_timeout(outputdir+dir_item['filename'], localfname=dir_item['filename'])
 
-    # HERE need to delete our LR files from sensor
+    # Delete leftovers from sensor
     lr_cleanup(lr_session)
  
     # Call steamline on the 7z lr package
-    streamline_path = "/opt/host_analysis/streamline/streamline.py"
     print("[+] Starting streamline on {}".format(localfile))
-    streamline(streamline_path + " " + localfile)
+    args = shlex.split(streamline_path + " " + localfile)
+    subprocess.call(args, stdout=subprocess.PIPE)
     print("[+] Streamline complete")
-    return
-
-
-def Collection(hyper_lr, args):
-    if args.info:
-        print()
-        #sensor = cb.select(Sensor).where("hostname:{}".format(args.sensor)).one()
-        sensor = hyper_lr.sensor
-        print("Sensor object - {}".format(sensor.webui_link))
-        print("-------------------------------------------------------------------------------\n")
-        print("\tcb_build_version_string: {}".format(sensor.build_version_string))
-        print("\tcomputer_sid: {}".format(sensor.computer_sid))
-        print("\tcomputer_dns_name: {}".format(sensor.computer_dns_name))
-        print("\tcomputer_name: {}".format(sensor.computer_name))
-        print("\tos_environment_display_string: {}".format(sensor.os_environment_display_string))
-        print("\tphysical_memory_size: {}".format(sensor.physical_memory_size))
-        print("\tsystemvolume_free_size: {}".format(sensor.systemvolume_free_size))
-        print("\tsystemvolume_total_size: {}".format(sensor.systemvolume_total_size))
-        print()
-        print("\tstatus: {}".format(sensor.status))
-        print("\tis_isolating: {}".format(sensor.is_isolating))
-        print("\tsensor_id: {}".format(sensor.id))
-        print("\tlast_checkin_time: {}".format(sensor.last_checkin_time))
-        print("\tnext_checkin_time: {}".format(sensor.next_checkin_time))
-        print("\tsensor_health_message: {}".format(sensor.sensor_health_message))
-        print("\tsensor_health_status: {}".format(sensor.sensor_health_status))
-        print("\tnetwork_interfaces:")
-        for ni in sensor.network_interfaces:
-            print("\t\t{}".format(ni))
-        if sensor.status == "Online":
-            print("\n\t+ Tring to get logical drives..")
-            #lr_session = sensor.lr_session()
-            lr_session = hyper_lr.go_live()
-            print("\t\tAvailable Drives: %s" % ' '.join(lr_session.session_data.get('drives', [])))
-            lr_session.close()
-            lr_session = None
-        print()
-        return True
-
-    #lr_session = go_live(cb.select(Sensor).where("hostname:{}".format(args.sensor)).one())
-    lr_session = hyper_lr.go_live()
-
-    if lr_session:
-        if args.multi_collect:
-            filepaths = regpaths = full_collect = None
-            config = ConfigParser()
-            config.read(args.multi_collect)
-            try:
-                filepaths = config.items("files")
-            except:
-                filepaths = []
-            try:
-                regpaths = config.items("registry_paths")
-            except:
-                regpaths = []
-            try:
-                full_collect = config.get('full_collect', 'action')
-            except:
-                pass
-            
-            if regpaths is not None:
-                for regpath in regpaths:
-                    if isinstance(regpath, tuple):
-                        regpath = regpath[1]
-                    print("~ Trying to get {}".format(regpath))
-                    try:
-                        result = lr_session.get_registry_value(regpath)
-                        if result:
-                            localfname = args.sensor + '_regkey_' + result['value_name'] + ".txt"
-                            with open(localfname,'wb') as f:
-                                f.write(bytes(result['value_data'], 'UTF-8'))
-                            print("\t+ Data written to: {}".format(localfname))
-                    except Exception as e:
-                        print("[!] Error: {}".format(str(e)))
-            if filepaths is not None:
-                for filepath in filepaths:
-                    try:
-                        getFile_with_timeout(lr_session, args.sensor, filepath[1])
-                    except Exception as e:
-                        print("[!] Error: {}".format(str(e)))
-            if full_collect == 'True':
-               return False #LR_collection(hyper_lr, args) 
-
-        elif args.filepath:
-            getFile_with_timeout(lr_session, args.sensor, args.filepath)
-        elif args.process_list:
-            print("~ obtaining running process data..")
-            for process in lr_session.list_processes():
-                pname = process['path'][process['path'].rfind('\\')+1:]
-                print("\n\t-------------------------")
-                print("\tProcess: {} (PID: {})".format(pname, process['pid']))
-                #print("\tProcID: {}".format(process['pid']))
-                print("\tGUID: {}".format(process['proc_guid']))
-                print("\tUser: {}".format(process['username']))
-                print("\tCommand: {}".format(process['command_line']))
-            print()
-        elif args.memdump:
-            if args.memdump == 'ALLMEM':
-                print("~ dumping contents of memory on {}".format(args.sensor))
-                local_file = remote_file = "{}.memdmp".format(args.sensor)
-                try:
-                    dump_object = lr_session.start_memdump(remote_filename=remote_file, compress=False)
-                    dump_object.wait()
-                    print("+ Memory dump complete on host -> C:\windows\carbonblack\{}".format(remote_file))
-                except live_response_api.LiveResponseError as e:
-                    print("[ERROR] LiveResponseError: {}".format(e))
-                    return 1
-                filedata = None
-                with open('/opt/carbonblack/cbinterface/lr_tools/compress_file.bat', 'rb') as f:
-                    filedata = f.read()
-                try:
-                    lr_session.put_file(filedata, "C:\\Windows\\CarbonBlack\\compress_file.bat")
-                except live_response_api.LiveResponseError as e:
-                    if 'ERROR_FILE_EXISTS' not in str(e):
-                        LOGGER.error("Error puting compress_file.bat")
-                        return 1
-                    else:
-                        lr_session.delete_file("C:\\Windows\\CarbonBlack\\compress_file.bat")
-                        lr_session.put_file(filedata, "C:\\Windows\\CarbonBlack\\compress_file.bat")
-                print("~ Launching compress_file.bat to create C:\windows\carbonblack\_memdump.zip")
-                compress_cmd = "C:\\Windows\\CarbonBlack\\compress_file.bat "+remote_file
-                lr_session.create_process(compress_cmd, wait_for_output=False, wait_for_completion=False)
-                print("  [!] If compression successful, _memdump.zip will exist, otherwise {} will exist".format(remote_file))
-            else:
-                print("~ dumping memory where pid={} for {}".format(args.memdump, args.sensor))
-                # need to make sure procdump.exe is on the sensor
-                lr_tool_path = "C:\\lr\\win32\\tools\\"
-                procdump_host_path = None
-                try:
-                    dir_output = lr_session.list_directory(lr_tool_path)
-                    for dir_item in dir_output:
-                        if dir_item['filename'] == 'procdump.exe':
-                            print("[INFO] procdump.exe already on host. Sweet")
-                            procdump_host_path = lr_tool_path + "procdump.exe"
-                            break
-                    else:
-                        print("[INFO] procdump.exe not already on host.")
-                except live_response_api.LiveResponseError as e:
-                    if 'ERROR_PATH_NOT_FOUND' not in str(e):
-                        print("[ERROR] LiveResponseError: {}".format(e))
-                        return 1
-                    else:
-                        try: # has cbinterface already dropped it?
-                            dir_output = lr_session.list_directory("C:\\lr\\")
-                            for dir_item in dir_output:
-                                if dir_item['filename'] == 'procdump.exe':
-                                    print("[INFO] procdump.exe already on host.")
-                                    procdump_host_path = "C:\\lr\\procdump.exe"
-                                    break
-                        except live_response_api.LiveResponseError as e:
-                            if 'ERROR_PATH_NOT_FOUND' not in str(e) and 'ERROR_FILE_NOT_FOUND' not in str(e):
-                                print("here")
-                                print("[ERROR] LiveResponseError: {}".format(e))
-                                return 1
-                            else:
-                                print("[INFO] Procdump not already on host, dropping procdump..")
-
-                if not procdump_host_path:
-                    print("~ dropping procdump.exe on host.")
-                    procdump_analysis_path = "/opt/host_analysis/cblr/lr_tools/procdump.exe"
-                    filedata = None
-                    with open(procdump_analysis_path, 'rb') as f: 
-                        filedata = f.read()
-                    try:
-                        lr_session.create_directory("C:\\lr")
-                    except live_response_api.LiveResponseError:
-                        print("[INFO] LR directory already exists")
-                    lr_session.put_file(filedata, "C:\\lr\\procdump.exe")
-                    procdump_host_path = "C:\\lr\\procdump.exe"
-
-                print("~ Executing procdump..")
-                command_str = procdump_host_path + " -accepteula -ma " + str(args.memdump) 
-                result = lr_session.create_process(command_str)
-                time.sleep(1)
-                print("+ procdump output:\n-------------------------")
-                result = result.decode('utf-8')
-                print(result + "\n-------------------------")
-
-                # cut off the carriage return and line feed from filename 
-                dumpfile_name = result[result.rfind('\\')+1:result.rfind('.dmp')+4]
-                dumpfilepath = "C:\\WINDOWS\\CarbonBlack\\"
-                while True:
-                    if 'procdump.exe' not in str(lr_session.list_processes()):
-                        break
-                    else:
-                        time.sleep(1)
-                # download dumpfile to localdir
-                getFile_with_timeout(lr_session, args.sensor, dumpfilepath+dumpfile_name)
-        elif args.command_exec:
-            print("executing '{}' on {}".format(args.command_exec, args.sensor))
-            result = lr_session.create_process(args.command_exec, wait_timeout=60, wait_for_output=True)
-            print("\n-------------------------")
-            result = result.decode('utf-8')
-            print(result + "\n-------------------------")
-            print()
-        elif args.regkeypath:
-            print("\n\t{}".format(args.regkeypath))
-            result = lr_session.get_registry_value(args.regkeypath)
-            print("\t-------------------------")
-            print("\tName: {}".format(result['value_name']))
-            print("\tType: {}".format(result['value_type']))
-            print("\tData: {}".format(result['value_data']))
-            print()
-        elif args.get_task:
-            print("[+] Making scheduledTaskOps.ps1 available on host.")
-            schtask_ps_path = '/opt/carbonblack/cbinterface/lr_tools/scheduledTaskOps.ps1'
-            filedata = None
-            with open(schtask_ps_path, 'rb') as f:
-                filedata = f.read()
-            try:
-                lr_session.put_file(filedata, "C:\\windows\\carbonblack\\scheduledTaskOps.ps1")
-                print("[+] Dropped scheduledTaskOps.ps1.")
-            except live_response_api.LiveResponseError as e:
-                if "ERROR_FILE_EXISTS" in str(e):
-                    print("[+] scheduledTaskOps.ps1 already on host.")
-                else:
-                    LOGGER.error(str(e))
-                    sys.exit(1)
-            # execute
-            cmd = "powershell.exe C:\\windows\\carbonblack\\scheduledTaskOps.ps1 -Get"
-            print("[+] Executing: {}".format(cmd))
-            result = lr_session.create_process(cmd)
-            result = result.decode('utf-8')
-            print("[+] Execution Results:\n-------------------------")
-            print(result + "\n-------------------------")
-            print()
- 
-        else:
-            return False #LR_collection(hyper_lr, args)
     return True
 
 
@@ -623,7 +234,7 @@ def Remediation(cb, args):
     lr_session = go_live(sensor)
     if args.isolate:
         if sensor.is_isolating:
-            print("[+] Removing isoltion ..")
+            print("[+] Removing isolation ..")
             sensor.unisolate()
         else:
             print("[+] Isolating Sensor ..")
@@ -775,7 +386,8 @@ def Remediation(cb, args):
  
     return 0
      
- 
+
+## locate environment by sensor name ## 
 def sensor_search(profiles, sensor_name):
     if not isinstance(profiles, list):
         LOGGER.error("profiles argument is not a list")
@@ -790,7 +402,7 @@ def sensor_search(profiles, sensor_name):
         except TypeError as e:
             # Appears to be bug in cbapi library here -> site-packages/cbapi/query.py", line 34, in one
             # Raise MoreThanOneResultError(message="0 results for query {0:s}".format(self._query))
-            # That raises a TypeError ¯\_(ツ)_/¯
+            # That raises a TypeError 
             if 'non-empty format string passed to object' in str(e):
                 try: # accounting for what appears to be an error in cbapi error handling
                     result = cb.select(Sensor).where("hostname:{}".format(sensor_name))
@@ -821,6 +433,7 @@ def sensor_search(profiles, sensor_name):
     return cb_finds
 
 
+## locate environment by process guid ##
 def proc_search_environments(profiles, proc_guid):
 
     #cbapi does not check for guids and doesn't error correctly
@@ -846,7 +459,7 @@ def proc_search_environments(profiles, proc_guid):
 
 def main():
 
-    parser = argparse.ArgumentParser(description="An interface to our CarbonBlack environments")
+    parser = argparse.ArgumentParser(description="An interface to CarbonBlack environments")
 
     #profiles = auth.CredentialStore("response").get_profiles()
     parser.add_argument('-e', '--environment', choices=auth.CredentialStore("response").get_profiles(),
@@ -862,7 +475,7 @@ def main():
     parser_vx.add_argument('vxstream_report', help='path to vxstream report')
     parser_vx.add_argument('-p', '--print-process-tree', action='store_true', help='print the process tree')
 
-    parser_usb = subparsers.add_parser('enumerate_usb')
+    parser_usb = subparsers.add_parser('enumerate_usb', help="Show recent removable drive activity on the sensor")
     parser_usb.add_argument('sensor', help='hostname of the sensor')
     parser_usb.add_argument('-s', '--start-time', action='store',
                             help='how far back to query (default:ALL time)')
@@ -922,8 +535,6 @@ def main():
     parser_query.add_argument('-lh', '--logon-history', action='store_true', help="Display available logon history for given username or hostname")
 
     parser_collect = subparsers.add_parser('collect', help='perform LR collection tasks on a host')
-    #parser_collect.add_argument('environment', choices=environments,
-    #                             help="The carbonblack environment where the sensor resides.")
     parser_collect.add_argument('sensor', help="the hostname/sensor to collect from")
     parser_collect.add_argument('-f', '--filepath', action='store', help='collect file')
     parser_collect.add_argument('-c', '--command-exec', action='store', help='command to execute')
@@ -931,8 +542,10 @@ def main():
                                 help='show processes running on sensor')
     parser_collect.add_argument('-m', '--memdump', action='store', const='ALLMEM', nargs='?',
                                 help='dump memory on a specific process-id')
-    parser_collect.add_argument('-r', '--regkeypath', action='store',
-                                help='return the value of the regkey')
+    parser_collect.add_argument('-lr', '--regkeypath', action='store',
+                                help='List all registry values from the specified registry key.')
+    parser_collect.add_argument('-r', '--regkeyvalue', action='store',
+                                help='Returns the associated value of the specified registry key.')
     parser_collect.add_argument('-i', '--info', action='store_true', help='print sensor information')
     parser_collect.add_argument('-gst', '--get-task', action='store_true', help='get scheduled tasks or specifc task')
     parser_collect.add_argument('-mc', '--multi-collect', action='store', help='path to ini file listing files and regs to collect')
@@ -960,8 +573,6 @@ def main():
     reg2=HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\\hippo"""
 
     parser_remediate = subparsers.add_parser('remediate', help='remediate a host')
-    #parser_remediate.add_argument('environment', choices=environments,
-    #                              help="The carbonblack environment where the sensor resides.")
     parser_remediate.add_argument('sensor', help="the hostname/sensor needing remediation")
     parser_remediate.add_argument('-i', '--isolate', help='toggle host isolation', default=False, action='store_true')
     parser_remediate.add_argument('-f', '--remediation-filepath',
@@ -992,9 +603,7 @@ def main():
     root = logging.getLogger()
     root.addHandler(logging.StreamHandler())
     logging.getLogger("cbapi").setLevel(logging.ERROR)
-    logging.getLogger("lerc_api").setLevel(logging.INFO)
-
-    print(time.ctime() + "... starting")
+    logging.getLogger("lerc_api").setLevel(logging.WARNING)
 
     # ignore the proxy
     if 'https_proxy' in os.environ:
@@ -1010,6 +619,8 @@ def main():
         print()
         return 0
 
+
+    # Set up environment profiles
     profile = None
     profiles = []
     if args.environment: 
@@ -1025,6 +636,16 @@ def main():
                 profiles.append(profile)
 
 
+    # Process Quering #
+    if args.command == 'query':
+        for profile in profiles:
+            print("\nSearching {} environment..".format(profile))
+            q = CBquery(profile=profile)
+            q.process_query(args)
+        return 0
+
+
+    # Select correct environment, by sensor hostname
     if args.command == 'collect' or args.command == 'remediate' or args.command == 'enumerate_usb':
         cb_results = sensor_search(profiles, args.sensor)
         if not isinstance(cb_results, list):
@@ -1041,23 +662,14 @@ def main():
             profile = results[1]
             cb = results[0]
 
+
     # Show USB Regmod activity
     if args.command == 'enumerate_usb':
         enumerate_usb(cb, args.sensor, args.start_time)
 
-    # Process Quering #
-    if args.command == 'query':
-        if args.environment:
-            q = CBquery(args.environment)
-            q.process_query(args)
-        else: # query all environments
-            for profile in profiles:
-                print("\nSearching {} environment..".format(profile))
-                q = CBquery(profile=profile)
-                q.process_query(args)
-        return 0
 
-    # lazy hack
+    # lerc install arguments can differ by company/environment
+    # same lazy hack to define in cb config
     config = {}
     try:
         default_profile = auth.default_profile
@@ -1066,12 +678,116 @@ def main():
     except:
         pass
 
+
     # Collection #
     if args.command == 'collect':
         sensor = cb.select(Sensor).where("hostname:{}".format(args.sensor)).one()
         hyper_lr = hyperLiveResponse(sensor)
-        result = Collection(hyper_lr, args)
-        if not result:
+
+        if args.info:
+            print(hyper_lr)
+
+        # start a cb lr session
+        lr_session = hyper_lr.go_live()
+
+        if args.multi_collect:
+            filepaths = regpaths = full_collect = None
+            config = ConfigParser()
+            config.read(args.multi_collect)
+            try:
+                filepaths = config.items("files")
+            except:
+                filepaths = []
+            try:
+                regpaths = config.items("registry_paths")
+            except:
+                regpaths = []
+            try:
+                full_collect = config.get('full_collect', 'action')
+            except:
+                pass
+
+            if regpaths is not None:
+                for regpath in regpaths:
+                    if isinstance(regpath, tuple):
+                        regpath = regpath[1]
+                    print("~ Trying to get {}".format(regpath))
+                    try:
+                        result = lr_session.get_registry_value(regpath)
+                        if result:
+                            localfname = args.sensor + '_regkey_' + result['value_name'] + ".txt"
+                            with open(localfname,'wb') as f:
+                                f.write(bytes(result['value_data'], 'UTF-8'))
+                            print("\t+ Data written to: {}".format(localfname))
+                    except Exception as e:
+                        print("[!] Error: {}".format(str(e)))
+            if filepaths is not None:
+                for filepath in filepaths:
+                    try:
+                        hyper_lr.getFile_with_timeout(filepath[1])
+                    except Exception as e:
+                        print("[!] Error: {}".format(str(e)))
+            if full_collect == 'True':
+               return False #LR_collection(hyper_lr, args)
+            return True
+
+        elif args.filepath:
+            hyper_lr.getFile_with_timeout(args.filepath)
+
+        elif args.process_list:
+            hyper_lr.print_processes()
+
+        elif args.memdump:
+            # get config items
+            config = ConfigParser()
+            config.read(CONFIG_PATH)
+            #if config.has_section('memory'):
+            #    if 
+            cb_compress = config['memory'].getboolean('cb_default_compress')
+            custom_compress = config['memory'].getboolean('custom_compress')
+            custom_compress_file = config['memory']['custom_compress_file']
+            auto_collect_mem = config['memory'].getboolean('auto_collect_mem_file')
+            lerc_collect_mem = config['memory'].getboolean('lerc_collect_mem')
+            path_to_procdump = config['memory']['path_to_procdump']
+            
+            if args.memdump == "ALLMEM":
+                return hyper_lr.dump_sensor_memory(cb_compress=cb_compress, custom_compress=custom_compress,
+                                                   custom_compress_file=custom_compress_file,
+                                                   auto_collect_result=auto_collect_mem)
+            else:
+                return hyper_lr.dump_process_memory(args.memdump, path_to_procdump=path_to_procdump)
+
+        elif args.command_exec:
+            print("executing '{}' on {}".format(args.command_exec, args.sensor))
+            result = lr_session.create_process(args.command_exec, wait_timeout=60, wait_for_output=True)
+            print("\n-------------------------")
+            result = result.decode('utf-8')
+            print(result + "\n-------------------------")
+            print()
+
+        elif args.regkeypath:
+            print("\n\t{}".format(args.regkeypath))
+            results = lr_session.list_registry_keys(args.regkeypath)
+            for result in results:
+                print("\t-------------------------")
+                print("\tName: {}".format(result['value_name']))
+                print("\tType: {}".format(result['value_type']))
+                print("\tData: {}".format(result['value_data']))
+                print()
+
+        elif args.regkeyvalue:
+            print("\n\t{}".format(args.regkeyvalue))
+            result = lr_session.get_registry_value(args.regkeyvalue)
+            print("\t-------------------------")
+            print("\tName: {}".format(result['value_name']))
+            print("\tType: {}".format(result['value_type']))
+            print("\tData: {}".format(result['value_data']))
+            print()
+
+        elif args.get_task:
+            return hyper_lr.get_scheduled_tasks()
+
+        else:
             # perform full live response collection
             if config['lerc_install_cmd']:
                 hyper_lr.deploy_lerc(config['lerc_install_cmd'])
@@ -1082,6 +798,7 @@ def main():
     # Remediation #
     if args.command == 'remediate':
         return Remediation(cb, args)
+
 
     # Process Investigation #
     process_tree = None
@@ -1166,10 +883,11 @@ def main():
 
         
     print()
-    return 0
+    return True
 
 if __name__ == "__main__":
+    print(time.ctime() + "... starting")
     result = main()
-    if result != 1:
-        print(time.ctime() + "...Done.")
+    if result:
+        print(time.ctime() + "... Done.")
     sys.exit(result)
