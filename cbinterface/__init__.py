@@ -37,7 +37,7 @@ LOGGER.propagate = False
 formatter = logging.Formatter('[%(levelname)s] %(message)s')
 handler = logging.StreamHandler()
 handler.setFormatter(formatter)
-handler.setLevel(logging.DEBUG)
+handler.setLevel(logging.INFO)
 LOGGER.addHandler(handler)
 
 # MAX number of threads performing splunk searches
@@ -686,6 +686,7 @@ def main():
 
         if args.info:
             print(hyper_lr)
+            return True
 
         # start a cb lr session
         lr_session = hyper_lr.go_live()
