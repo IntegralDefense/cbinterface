@@ -38,19 +38,19 @@ class hyperLiveResponse():
         timeout = 604800 # seven days
         current_day = 0
         if self.sensor.status == 'Offline':
-            logging.info("Waiting for sensor to come online..")
+            print("Waiting for sensor to come online..")
         while time.time() - start_time < timeout:
             try:
                 self.lr_session = self.sensor.lr_session()
-                logging.info("[+] LR session started at {}".format(time.ctime()))
+                print("[+] LR session started at {}".format(time.ctime()))
                 break
             except TimeoutError:
                 elapsed_time = time.time() - start_time
                 if current_day != elapsed_time // 86400:
                     current_day+=1
-                    logging.info("24 hours of timeout when polling for LR session")
-                    logging.info("Attempting LR session again on {} @ {}".format(self.hostname,
-                                                                                   time.ctime()))
+                    print("24 hours of timeout when polling for LR session")
+                    print("Attempting LR session again on {} @ {}".format(self.hostname,
+                                                                          time.ctime()))
         return self.lr_session
 
 
@@ -243,18 +243,18 @@ class hyperLiveResponse():
         for ni in self.sensor.network_interfaces:
             text += "\t\t{}\n".format(ni)
         if self.get_lerc_status():
-            text += "\nLERC Status:\n"
-            text += "\tClient installed at '{}' - status={} - last check-in='{}'\n".format(self.hostname,
+            text += "\n\tLERC Status:\n"
+            text += "\t\tClient installed at '{}' - status={} - last check-in='{}'\n".format(self.hostname,
                     self.lerc_status['install_date'], self.lerc_status['status'], self.lerc_status['last_activity'])
-        if self.sensor.status == "Online":
-            text += "\n\t+ Tring to get logical drives..\n"
-            if not self.lr_session:
-                try:
-                    self.go_live()
-                except Exception as e:
-                    raise Exception("Failed to Go Live on sensor: '{}'".format(str(e)))
-            text += "\t\tAvailable Drives: %s" % ' '.join(self.lr_session.session_data.get('drives', []))
-            text += "\n"
+        #if self.sensor.status == "Online":
+        #    text += "\n\t+ Tring to get logical drives..\n"
+        #    if not self.lr_session:
+        #        try:
+        #            self.go_live()
+        #        except Exception as e:
+        #            raise Exception("Failed to Go Live on sensor: '{}'".format(str(e)))
+        #    text += "\t\tAvailable Drives: %s" % ' '.join(self.lr_session.session_data.get('drives', []))
+        #    text += "\n"
         return text
 
 
