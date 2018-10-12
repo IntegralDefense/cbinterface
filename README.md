@@ -182,7 +182,7 @@ pip3 install cbinterface
 
 Currently, cbiterface straps onto the default configuration files used by cbapi (see [here](https://github.com/carbonblack/cbapi-python#api-token)).
 
-If you have multiple carbonblack environments, you should name the sections in your credentials.response configuration something meaningful. In addition, there are currently two custom fields that cbiterface looks for in the carbonblack response configuration file. First, ```envtype``` , which specifies the type of carbonblack environment. By default, **cbinterface will only return results or attach to environments where ```envtype``` is set to 'production'**. Otherwise, you will have to use the `-e` flag to specify the environment you want to work with. Below is an example credentials.response file:
+If you have multiple carbonblack environments, you should name the sections in your credentials.response configuration something meaningful. In addition, there are currently two custom fields that cbiterface looks for in the carbonblack response configuration file. First, ```envtype``` , which specifies the type of carbonblack environment. By default, cbinterface will return results for every environment in your configuration file. However, if you create a ```envtype``` variable and set its value to anything other than 'production' you will have to use the `-e` flag to acess that environment. Below is an example credentials.response file:
 
     [sandbox]
     url=https://sandbox.local
@@ -203,3 +203,4 @@ If you have multiple carbonblack environments, you should name the sections in y
     ssl_verify=True
     envtype=production
 
+The second variable is for the Live Response Endpoint Client (LERC).
