@@ -2,6 +2,12 @@
 
 cbinterface is a command line tool for interfacing with multiple carbonblack environments to perform analysis and live response functions.
 
+## Demo
+
+The following demo shows how cbinterface can be used to query multiple environments, investigate process trees, isolate sensors, and perform live response collections and remediations on sensors.
+
+[![Cbinterface Demo: RAT scenario](https://i.ytimg.com/vi/hQ14nZWq384/hqdefault.jpg)](https://youtu.be/hQ14nZWq384)
+
 ## Some Basic Examples
 
 ### query
