@@ -385,7 +385,23 @@ def Remediation(cb, args):
                     print()
  
     return 0
-     
+
+# handle proxy configurations as specified
+# for each profile in credentials.response
+HTTPS_PROXY = None
+if 'https_proxy' in os.environ:
+    HTTPS_PROXY = os.environ['https_proxy']
+
+def handle_proxy(profile):
+    creds = auth.CredentialStore("response").get_credentials(profile=profile)
+    if 'ignore_system_proxy' in creds:
+        if creds['ignore_system_proxy']:
+            if 'https_proxy' in os.environ:
+                del os.environ['https_proxy']
+        else:
+            os.environ['https_proxy'] = HTTPS_PROXY
+    return
+
 
 ## locate environment by sensor name ## 
 def sensor_search(profiles, sensor_name):
@@ -394,6 +410,7 @@ def sensor_search(profiles, sensor_name):
         return 1
     cb_finds = []
     for profile in profiles:
+        handle_proxy(profile)
         cb = CbResponseAPI(profile=profile)
         try:
             cb.select(Sensor).where("hostname:{}".format(sensor_name)).one()
@@ -444,6 +461,7 @@ def proc_search_environments(profiles, proc_guid):
 
     #stored_exceptions = []
     for profile in profiles:
+        handle_proxy(profile)
         cb = CbResponseAPI(profile=profile)
         try:
             proc = cb.select(Process, proc_guid, force_init=True)
@@ -605,9 +623,6 @@ def main():
     logging.getLogger("cbapi").setLevel(logging.ERROR)
     logging.getLogger("lerc_api").setLevel(logging.WARNING)
 
-    # ignore the proxy
-    if 'https_proxy' in os.environ:
-        del os.environ['https_proxy']
 
     ''' All VxStream related stuff may be removed in a future version '''
     if args.command == 'vxdetect':
@@ -639,6 +654,7 @@ def main():
     # Process Quering #
     if args.command == 'query':
         for profile in profiles:
+            handle_proxy(profile)
             print("\nSearching {} environment..".format(profile))
             q = CBquery(profile=profile)
             q.process_query(args)

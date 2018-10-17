@@ -6,7 +6,7 @@ cbinterface is a command line tool for interfacing with multiple carbonblack env
 
 ### query
 
-Search for a md5:
+You can preform any query via the command line that you could perform via the CbResponse GUI. Search for a md5:
 
 ```
 $ cbinterface query md5:04A34D3737B01636C5BD8C4FFB542896
@@ -204,3 +204,5 @@ If you have multiple carbonblack environments, you should name the sections in y
     envtype=production
 
 The second variable is for the Live Response Endpoint Client (LERC).
+
+Also, cbitnerface will use any proxy settings defined in the environment accordly with the ``ignore_system_proxy`` variable in the credentials.response config.
