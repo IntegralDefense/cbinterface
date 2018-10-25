@@ -7,6 +7,7 @@ import logging
 import datetime
 from cbapi.response import models
 from cbapi.live_response_api  import LiveResponseError
+from cbapi.errors import TimeoutError
 
 logging.getLogger(__name__)
 
