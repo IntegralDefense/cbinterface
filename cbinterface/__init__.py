@@ -411,6 +411,7 @@ def sensor_search(profiles, sensor_name):
         return 1
     cb_finds = []
     for profile in profiles:
+        LOGGER.debug("Searching {} environment".format(profile))
         handle_proxy(profile)
         cb = CbResponseAPI(profile=profile)
         try:
