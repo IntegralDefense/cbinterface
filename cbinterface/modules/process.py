@@ -140,7 +140,10 @@ class ProcessWrapper():
             for crossp in self.proc.crossprocs:
                 cp_dict = { 'timestamp': str(eastern_time(crossp.timestamp)), 'type': crossp.type,
                             'privileges': crossp.privileges, 'target_md5': crossp.target_md5,
-                            'target_path': crossp.target_path, 'segment': segment }
+                            'target_path': crossp.target_path, 'segment': segment,
+                            'source_path': crossp.source_path, 'source_web_link': crossp.source_proc.webui_link,
+                            'target_web_link': crossp.target_proc.webui_link, 'source_proc_guid': crossp.source_proc.id,
+                            'target_proc_guid': crossp.target_proc.id, 'source_md5': crossp.source_md5}
                 process_summary['crossprocs'].append(cp_dict)
 
         return process_summary
@@ -218,8 +221,8 @@ class ProcessWrapper():
                                                                cross.type,
                                                                cross.source_path,
                                                                cross.target_path,
-                                                               cross.source_proc.webui_link,
-                                                               cross.target_proc.webui_link))
+                                                               cross.source_proc.id,
+                                                               cross.target_proc.id))
                 print()
         print()
 

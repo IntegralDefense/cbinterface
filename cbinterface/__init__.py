@@ -40,6 +40,7 @@ handler.setFormatter(formatter)
 handler.setLevel(logging.INFO)
 LOGGER.addHandler(handler)
 
+
 # MAX number of threads performing splunk searches
 MAX_SEARCHES = 4
 
@@ -360,7 +361,7 @@ def Remediation(cb, args):
                 command_str = "powershell.exe Remove-Item {} -Force -Recurse".format(dirpath)
                 result = lr_session.create_process(command_str)
                 if result == b'':
-                    print(" + Deleted {}".format(dirpath))
+                    print(" + Deleted Directory {}".format(dirpath))
                 else:
                     print(" - Problem  deleting {}".format(dirpath))
         
@@ -410,6 +411,7 @@ def sensor_search(profiles, sensor_name):
         return 1
     cb_finds = []
     for profile in profiles:
+        LOGGER.debug("Searching {} environment".format(profile))
         handle_proxy(profile)
         cb = CbResponseAPI(profile=profile)
         try:
@@ -622,7 +624,6 @@ def main():
     root.addHandler(logging.StreamHandler())
     logging.getLogger("cbapi").setLevel(logging.ERROR)
     logging.getLogger("lerc_api").setLevel(logging.WARNING)
-
 
     ''' All VxStream related stuff may be removed in a future version '''
     if args.command == 'vxdetect':
