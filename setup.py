@@ -14,7 +14,7 @@ from setuptools import setup, find_packages
 from codecs import open
 from os import path
 
-__version__ = "1.1.5"
+__version__ = "1.1.6"
 description = "command line tool for interfacing with multiple carbonblack " \
               "environments to perform analysis and live response functions"
 

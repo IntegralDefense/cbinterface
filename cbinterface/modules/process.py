@@ -143,7 +143,7 @@ class ProcessWrapper():
                             'target_path': crossp.target_path, 'segment': segment,
                             'source_path': crossp.source_path, 'source_web_link': crossp.source_proc.webui_link,
                             'target_web_link': crossp.target_proc.webui_link, 'source_proc_guid': crossp.source_proc.id,
-                            'target_proc_guid': crossp.target_proc.id}
+                            'target_proc_guid': crossp.target_proc.id, 'source_md5': crossp.source_md5}
                 process_summary['crossprocs'].append(cp_dict)
 
         return process_summary
