@@ -56,13 +56,18 @@ signal.signal(signal.SIGINT, clean_exit)
 
 
 ## -- TBD/WIP -- ##
-def enumerate_usb(cb, host, start_time=None):
+def enumerate_usb(sensor, start_time=None):
+    cb = sensor._cb
+    host = sensor.hostname
     query_string = r'regmod:registry\machine\system\currentcontrolset\control\deviceclasses\{53f56307-b6bf-11d0-94f2-00a0c91efb8b}\*'
     query_string += ' hostname:{0:s}'.format(host)
     if start_time:
         query_string += ' start:{0:s}'.format(start_time)
 
     for proc in cb.select(Process).where(query_string):
+        if proc.sensor.id != sensor.id:
+            print()
+            print("!WARNING! - The following process result is for a different sensor, with the same hostname: {}".format(proc.sensor.id))
         print("\n[+] Found {} - {}:".format(proc.process_name, proc.id))
         print("%s=== USB REGMODS ====" % ('  '))
         for rm in proc.regmods:
@@ -229,8 +234,8 @@ def LR_collection(hyper_lr, args):
     return True
 
 
-def Remediation(cb, args):
-    sensor = cb.select(Sensor).where("hostname:{}".format(args.sensor)).one()
+def Remediation(sensor, args):
+    #sensor = cb.select(Sensor).where("hostname:{}".format(args.sensor)).one()
 
     lr_session = go_live(sensor)
     if args.isolate:
@@ -415,8 +420,8 @@ def sensor_search(profiles, sensor_name):
         handle_proxy(profile)
         cb = CbResponseAPI(profile=profile)
         try:
-            cb.select(Sensor).where("hostname:{}".format(sensor_name)).one()
-            cb_finds.append((cb, profile))
+            sensor = cb.select(Sensor).where("hostname:{}".format(sensor_name)).one()
+            cb_finds.append((sensor, profile))
             LOGGER.info("Found a sensor by this name in {} environment".format(profile))
         except TypeError as e:
             # Appears to be bug in cbapi library here -> site-packages/cbapi/query.py", line 34, in one
@@ -429,7 +434,11 @@ def sensor_search(profiles, sensor_name):
                         print()
                         LOGGER.warn("MoreThanOneResultError searching for {0:s}".format(sensor_name))
                         print("\nResult breakdown:")
+                        sensor_ids = []
+                        choice_string = "Which sensor do you want to use?\n"
                         for sensor in result:
+                            sensor_ids.append(int(sensor.id))
+                            choice_string += "\t- {}\n".format(sensor.id)
                             print()
                             print("Sensor object - {}".format(sensor.webui_link))
                             print("-------------------------------------------------------------------------------\n")
@@ -443,9 +452,18 @@ def sensor_search(profiles, sensor_name):
                             print("\tsensor_health_status: {}".format(sensor.sensor_health_status))
                             print("\tnetwork_interfaces:")
                         print()
-                        return 1
-                except:
-                    pass
+                        default_sid = max(sensor_ids)
+                        choice_string += "\nEnter one of the sensor ids above. Default: [{}]".format(default_sid)
+                        user_choice = int(input(choice_string) or default_sid)
+                        for sensor in result:
+                            if user_choice == int(sensor.id):
+                                cb_finds.append((sensor, profile))
+                    else:
+                        LOGGER.error("-Unseen error condition: {}".format(e))
+                except Exception as e:
+                    LOGGER.debug("--Unseen error condition: {}".format(e))
+            else:
+                LOGGER.error("---Unseen error condition: {}".format(e))
         except Exception as e:
             LOGGER.debug("Exception searching for sensor in {}".format(str(e)))
             pass
@@ -662,7 +680,8 @@ def main():
         return 0
 
 
-    # Select correct environment, by sensor hostname
+    # Select correct environment by sensor hostname and get the sensor object
+    sensor = None
     if args.command == 'collect' or args.command == 'remediate' or args.command == 'enumerate_usb':
         cb_results = sensor_search(profiles, args.sensor)
         if not isinstance(cb_results, list):
@@ -674,15 +693,18 @@ def main():
                 return 0
             elif len(cb_results) > 1:
                 LOGGER.error("A sensor by hostname {} was found in multiple environments".format(args.sensor))
+                for r in cb_results:
+                    print("Results:")
+                    print("Profile {}: {} (SID:{})".format(r[1],r[0].hostname,r[0].id))
                 return 1
             results = cb_results[0]
             profile = results[1]
-            cb = results[0]
+            sensor = results[0]
 
 
     # Show USB Regmod activity
     if args.command == 'enumerate_usb':
-        enumerate_usb(cb, args.sensor, args.start_time)
+        enumerate_usb(sensor, args.start_time)
 
 
     # lerc install arguments can differ by company/environment
@@ -698,7 +720,6 @@ def main():
 
     # Collection #
     if args.command == 'collect':
-        sensor = cb.select(Sensor).where("hostname:{}".format(args.sensor)).one()
         hyper_lr = hyperLiveResponse(sensor)
 
         if args.info:
@@ -815,7 +836,7 @@ def main():
 
     # Remediation #
     if args.command == 'remediate':
-        return Remediation(cb, args)
+        return Remediation(sensor, args)
 
 
     # Process Investigation #

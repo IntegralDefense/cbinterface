@@ -178,8 +178,8 @@ class ProcessWrapper():
         for segment in self.proc.get_segments():
             self.proc.current_segment = segment
             for nc in self.proc.netconns:
-                print("  {}: ({}) remote IP:{} remote port:{} domain:{}".format(eastern_time(nc.timestamp),
-                                                                                nc.direction, nc.remote_ip,
+                print("  {}: ({}) local/proxy IP:{}/{} remote IP:{} remote port:{} domain:{}".format(eastern_time(nc.timestamp),
+                                                                                nc.direction, nc.local_ip, nc.proxy_ip, nc.remote_ip,
                                                                                 nc.remote_port, nc.domain))
         print()
 
