@@ -399,11 +399,10 @@ if 'https_proxy' in os.environ:
 
 def handle_proxy(profile):
     creds = auth.CredentialStore("response").get_credentials(profile=profile)
-    
+
     if 'ignore_system_proxy' in creds and 'https_proxy' in os.environ:
         if creds['ignore_system_proxy']:
-            if 'https_proxy' in os.environ:
-                del os.environ['https_proxy']
+            del os.environ['https_proxy']
         else:
             os.environ['https_proxy'] = HTTPS_PROXY
     return
