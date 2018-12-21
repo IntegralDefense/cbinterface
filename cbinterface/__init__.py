@@ -1,5 +1,4 @@
-#!/data/home/carbonblack/env3/bin/python3
-#/data/home/smcfeely/dev/env3/bin/python3
+#!/usr/bin/env python3
 
 import argparse
 import datetime
@@ -400,10 +399,10 @@ if 'https_proxy' in os.environ:
 
 def handle_proxy(profile):
     creds = auth.CredentialStore("response").get_credentials(profile=profile)
-    if 'ignore_system_proxy' in creds:
+
+    if 'ignore_system_proxy' in creds and 'https_proxy' in os.environ:
         if creds['ignore_system_proxy']:
-            if 'https_proxy' in os.environ:
-                del os.environ['https_proxy']
+            del os.environ['https_proxy']
         else:
             os.environ['https_proxy'] = HTTPS_PROXY
     return
@@ -668,6 +667,8 @@ def main():
             credentials = auth.CredentialStore("response").get_credentials(profile=profile)
             if credentials['envtype'].lower() == 'production':
                 profiles.append(profile)
+        
+        
 
 
     # Process Quering #
