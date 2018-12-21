@@ -1,5 +1,4 @@
-#!/data/home/carbonblack/env3/bin/python3
-#/data/home/smcfeely/dev/env3/bin/python3
+#!/usr/bin/env python3
 
 import argparse
 import datetime
@@ -668,6 +667,8 @@ def main():
             credentials = auth.CredentialStore("response").get_credentials(profile=profile)
             if credentials['envtype'].lower() == 'production':
                 profiles.append(profile)
+        
+        
 
 
     # Process Quering #
