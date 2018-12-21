@@ -501,7 +501,10 @@ def main():
 
     #profiles = auth.CredentialStore("response").get_profiles()
     parser.add_argument('-e', '--environment', choices=auth.CredentialStore("response").get_profiles(),
-                        help='specify an environment you want to work with. Default=All \'production\' environments')
+                        help='specify a specific instance you want to work with. If not defined -t will be used.')
+    parser.add_argument('-t', '--envtypes', type=str, 
+                        help='specify any combination of envtypes. Default=All \'production\' envtypes. Ignored if -e is set.',
+                        default='production')
     #parser.add_argument('--debug', action='store_true', help='print debugging info')
     #parser.add_argument('--warnings', action='store_true',
     #                         help="Warn before printing large executions")
@@ -664,10 +667,13 @@ def main():
         # a little hack for getting our environment type variable defined
         default_profile = auth.default_profile
         default_profile['envtype'] = 'production'
+        envtypes = set(args.envtypes.lower().split(','))
         for profile in auth.CredentialStore("response").get_profiles():
             credentials = auth.CredentialStore("response").get_credentials(profile=profile)
-            if credentials['envtype'].lower() == 'production':
+            envtype = set(credentials['envtype'].lower().split(','))
+            if(envtypes.issubset(envtype)):
                 profiles.append(profile)
+    print(profiles)
 
 
     # Process Quering #
