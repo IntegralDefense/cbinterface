@@ -501,7 +501,7 @@ def main():
 
     #profiles = auth.CredentialStore("response").get_profiles()
     parser.add_argument('-e', '--environment', choices=auth.CredentialStore("response").get_profiles(),
-                        help='specify a specific instance you want to work with. If not defined -t will be used.')
+                        help='specify a specific instance you want to work with. If not defined \'-t production\' will be used implicitly.')
     parser.add_argument('-t', '--envtypes', type=str, 
                         help='specify any combination of envtypes. Default=All \'production\' envtypes. Ignored if -e is set.',
                         default='production')
@@ -673,7 +673,7 @@ def main():
             profile_envtype = set(credentials['envtype'].lower().split(','))
             if(query_envtype.issubset(profile_envtype)):
                 profiles.append(profile)
-                
+
 
     # Process Quering #
     if args.command == 'query':
