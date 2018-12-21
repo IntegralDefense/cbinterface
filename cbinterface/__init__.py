@@ -667,14 +667,13 @@ def main():
         # a little hack for getting our environment type variable defined
         default_profile = auth.default_profile
         default_profile['envtype'] = 'production'
-        envtypes = set(args.envtypes.lower().split(','))
+        query_envtype = set(args.envtypes.lower().split(','))
         for profile in auth.CredentialStore("response").get_profiles():
             credentials = auth.CredentialStore("response").get_credentials(profile=profile)
-            envtype = set(credentials['envtype'].lower().split(','))
-            if(envtypes.issubset(envtype)):
+            profile_envtype = set(credentials['envtype'].lower().split(','))
+            if(query_envtype.issubset(profile_envtype)):
                 profiles.append(profile)
-    print(profiles)
-
+                
 
     # Process Quering #
     if args.command == 'query':
