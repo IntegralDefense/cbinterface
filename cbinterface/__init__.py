@@ -829,7 +829,10 @@ def main():
         else:
             # perform full live response collection
             if config['lerc_install_cmd']:
-                hyper_lr.deploy_lerc(config['lerc_install_cmd'])
+                result = hyper_lr.get_lerc_status()
+                if not result or result['status'] == 'UNINSTALLED' or result['status'] == 'UNKNOWN':
+                   if not hyper_lr.deploy_lerc(config['lerc_install_cmd']):
+                       LOGGER.warn("LERC deployment failed")
             else:
                 LOGGER.info("{} environment is not configrued for LERC deployment".format(profile))
             return LR_collection(hyper_lr, args)
