@@ -209,6 +209,5 @@ If you have multiple carbonblack environments, you should name the sections in y
     ssl_verify=True
     envtype=production
 
-The second variable is for the Live Response Endpoint Client (LERC).
 
-Also, cbitnerface will use any proxy settings defined in the environment accordly with the ``ignore_system_proxy`` variable in the credentials.response config.
+Also, cbinterface will use any proxy settings defined in the environment accordly with the ``ignore_system_proxy`` variable in the credentials.response config.

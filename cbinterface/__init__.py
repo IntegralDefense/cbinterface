@@ -202,17 +202,18 @@ def LR_collection(hyper_lr, args):
         if 'ARCHIVE' in dir_item['attributes'] and  dir_item['filename'].endswith('7z'):
             # use lerc, if available
             if hyper_lr.lerc_session:
-                hyper_lr.lerc_session.Upload(outputdir+dir_item['filename'])
-                command = hyper_lr.lerc_session.check_command()
+                lerc = hyper_lr.lerc_session.get_host(hyper_lr.hostname)
+                command = lerc.Upload(outputdir+dir_item['filename'])
+                #command = hyper_lr.lerc_session.check_command()
                 # wait for client to complete the command
                 print(" ~ Issued upload command to lerc. Waiting for command to finish..")
-                if hyper_lr.lerc_session.wait_for_command(command):
+                if command.wait_for_completion():
                     print(" ~ lerc command complete. Streaming LR from lerc server..")
-                    command = hyper_lr.lerc_session.get_results(file_path=dir_item['filename'])
+                    command.get_results(file_path=dir_item['filename'])
                     if command:
                         print("[+] lerc command results: ")
-                        pprint.pprint(command, indent=6)
-                        file_path = command['server_file_path']
+                        print(command)
+                        file_path = command.server_file_path
                         filename = file_path[file_path.rfind('/')+1:]
                         print()
                         print("[+] Wrote {}".format(dir_item['filename']))
@@ -835,7 +836,10 @@ def main():
         else:
             # perform full live response collection
             if config['lerc_install_cmd']:
-                hyper_lr.deploy_lerc(config['lerc_install_cmd'])
+                result = hyper_lr.get_lerc_status()
+                if not result or result == 'UNINSTALLED' or result == 'UNKNOWN':
+                   if not hyper_lr.deploy_lerc(config['lerc_install_cmd']):
+                       LOGGER.warn("LERC deployment failed")
             else:
                 LOGGER.info("{} environment is not configrued for LERC deployment".format(profile))
             return LR_collection(hyper_lr, args)
