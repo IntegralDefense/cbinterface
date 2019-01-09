@@ -162,14 +162,17 @@ class ProcessWrapper():
                         b = self.proc._cb.select(models.Binary, fm.md5)
                         signed = b.signed
                         product_name = b.product_name
-                        print("%s%s: %s: %s , md5:%s, signed:%s, product_name:%s" % ('  ',
-                              eastern_time(fm.timestamp), fm.type, fm.path,
+                        print("%s%s: %s: %s , type:%s , md5:%s, signed:%s, product_name:%s" % ('  ',
+                              eastern_time(fm.timestamp), fm.type, fm.path, fm.filetype,
                               fm.md5, signed, product_name))
                     except ObjectNotFoundError:
-                        print("%s%s: %s: %s , md5:%s" % ('  ', eastern_time(fm.timestamp),
-                              fm.type, fm.path, fm.md5))
+                        print("%s%s: %s: %s , type:%s , md5:%s" % ('  ', eastern_time(fm.timestamp),
+                              fm.type, fm.path, fm.filetype, fm.md5))
                 elif fm.type != "CreatedFile":
-                    print("%s%s: %s: %s" % ('  ', eastern_time(fm.timestamp), fm.type, fm.path))
+                    if fm.filetype != "Unknown":
+                        print("%s%s: %s: %s , type:%s" % ('  ', eastern_time(fm.timestamp), fm.type, fm.path, fm.filetype))
+                    else:
+                        print("%s%s: %s: %s" % ('  ', eastern_time(fm.timestamp), fm.type, fm.path))
         print()
 
 
