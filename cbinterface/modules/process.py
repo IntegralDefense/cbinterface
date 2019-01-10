@@ -1,10 +1,26 @@
 #/usr/bin/python3
 
+import os
+import logging
 import datetime
+
+from configparser import ConfigParser
 from cbapi.response import models
 from cbapi.errors import ApiError, ObjectNotFoundError, TimeoutError, MoreThanOneResultError
 
 from .helpers import eastern_time
+
+# Configuration
+HOME_DIR = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+CONFIG_PATH = os.path.join(HOME_DIR, 'etc', 'config.ini')
+
+# load the default config
+CONFIG = ConfigParser()
+CONFIG.read(CONFIG_PATH)
+# get the default configuration file paths (allows for users to easily override settings)
+# and re-load the config to account for all config items
+CONFIG.read(CONFIG['DEFAULT']['config_path_list'].split(','))
+
 
 class ProcessWrapper():
     def __init__(self, process, suppressed_data={}):
@@ -331,6 +347,12 @@ class ProcessList():
         if tupled_list is None: tupled_list = []
 
         for process in process_tree:
+            if depth > CONFIG['DEFAULT'].getint('max_recursive_depth'):
+                # Preventing maximum recursion depth exceeded RunTime error
+                tupled_list.append((depth, "WARNING: This Process Tree exceeded the configured Maximum Recursive Depth. Not Proceeding."))
+                logging.warn("Process Tree exceeded the configured Maximum Recursive Depth.")
+                return tupled_list
+
             tupled_list.append((depth, (process.command + " (PID=" + process.pid + ")")))
 
             if process.children:
@@ -342,12 +364,21 @@ class ProcessList():
         if not process_tree:
             process_tree = self.structure()
             
+        max_depth = False
         for process in process_tree:
+            if depth > CONFIG['DEFAULT'].getint('max_recursive_depth'):
+                # Preventing maximum recursion depth exceeded RunTime error
+                max_depth = True
+                logging.warn("Process Tree exceeded the configured Maximum Recursive Depth.")
+                return text
+
             text += "  " * depth + " " + process.command + " (PID=" + process.pid + ")\n"
 
             if process.children:
                 text = self.__str__(process.children, text, depth+1)
 
+        if max_depth:
+            text = "WARNING: This Process Tree exceeded the configured Maximum Recursive Depth, at least once.\n\n" + text
         return text
 
 
