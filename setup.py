@@ -14,7 +14,7 @@ from setuptools import setup, find_packages
 from codecs import open
 from os import path
 
-__version__ = "1.2.0"
+__version__ = "1.2.1"
 description = "command line tool for interfacing with multiple carbonblack " \
               "environments to perform analysis and live response functions"
 
@@ -92,7 +92,7 @@ setup(
     # your project is installed. For an analysis of "install_requires" vs pip's
     # requirements files see:
     # https://packaging.python.org/en/latest/requirements.html
-    install_requires=['cbapi'],
+    install_requires=['cbapi==1.3.6'],
 
     entry_points={
         'console_scripts': ['cbinterface=cbinterface:main'],
