@@ -104,28 +104,41 @@ class ProcessWrapper():
         print("  === Process Ancestry ===\n")
         self.proc.walk_parents(_print_parent_details)
 
-    def events_to_json(self):
+    def events_to_json(self, segment_limit=None):
+        """Attempt to build a comprehensive json document for this process.
+        Note: This can be problematic for excessivly large processes. 
+
+        :param int segment_limit: Stop building the document after this many process segments.
+        :return: A dictionary of process events and details.
+        """
         process_raw_sum_data = self.proc._cb.get_object("/api/v1/process/{0}".format(self.proc.id))
         process_summary = process_raw_sum_data['process']
         process_summary['parent'] = process_raw_sum_data['parent']
         start_time = process_summary['start'].replace('T', ' ')
         start_time = start_time.replace('Z','')
         start_time = datetime.datetime.strptime(start_time, '%Y-%m-%d %H:%M:%S.%f')
-        process_summary['start'] = eastern_time(start_time)
+        process_summary['start'] = (start_time)
         process_summary['filemods'] = []
         process_summary['regmods'] = []
         process_summary['unsigned_modloads'] = []
         process_summary['netconns'] = []
         process_summary['crossprocs'] = []
         process_summary['children'] = []
-        #process_summary['segments'] = []
+        process_summary['segment_count'] = len(self.proc.get_segments())
 
+        if segment_limit and not isinstance(segment_limit, int):
+            raise TypeError("segment_limit is not an integer.")
+       
+        process_summary['segments_processed'] = 0
         for segment in self.proc.get_segments():
+            if segment_limit:
+                if process_summary['segments_processed'] > segment_limit:
+                    break
+
             self.proc.current_segment = segment
-            #process_summary['segments'].append(segment)
 
             for nc in self.proc.netconns:
-                nc_dict = { 'timestamp': str(eastern_time(nc.timestamp)), 'domain': nc.domain,
+                nc_dict = { 'timestamp': str((nc.timestamp)), 'domain': nc.domain,
                             'remote_ip': nc.remote_ip, 'remote_port': nc.remote_port,
                             'proto': nc.proto, 'direction': nc.direction, 'local_ip': nc.local_ip,
                             'local_port': nc.local_port, 'proxy_ip': nc.proxy_ip,
@@ -133,34 +146,36 @@ class ProcessWrapper():
                 process_summary['netconns'].append(nc_dict)
 
             for child in self.proc.children:
-                child = { 'timestamp': str(eastern_time(child.timestamp)), 'procguid': child.procguid,
+                child = { 'timestamp': str((child.timestamp)), 'procguid': child.procguid,
                           'pid': child.pid, 'path': child.path, 'md5': child.md5, 'segment': segment }
                 process_summary['children'].append(child)
 
             for fm in self.proc.filemods:
-                fm_dict = { 'timestamp': str(eastern_time(fm.timestamp)), 'type': fm.type, 'path': fm.path,
+                fm_dict = { 'timestamp': str((fm.timestamp)), 'type': fm.type, 'path': fm.path,
                             'filetype': fm.filetype, 'md5': fm.md5, 'segment': segment }
                 # note we can also cb.select the md5 and see if it's signed, etc.
                 process_summary['filemods'].append(fm_dict)
 
             for rm in self.proc.regmods:
-                rm_dict = { 'timestamp': str(eastern_time(rm.timestamp)), 'type': rm.type,
+                rm_dict = { 'timestamp': str((rm.timestamp)), 'type': rm.type,
                             'path': rm.path, 'segment': segment }
                 process_summary['regmods'].append(rm_dict)
 
             for ml in self.proc.unsigned_modloads:
-                unsml_dict = { 'timestamp': str(eastern_time(ml.timestamp)), 'md5': ml.md5,
+                unsml_dict = { 'timestamp': str((ml.timestamp)), 'md5': ml.md5,
                                'path': ml.path, 'segment': segment }
                 process_summary['unsigned_modloads'].append(unsml_dict)
 
             for crossp in self.proc.crossprocs:
-                cp_dict = { 'timestamp': str(eastern_time(crossp.timestamp)), 'type': crossp.type,
+                cp_dict = { 'timestamp': str((crossp.timestamp)), 'type': crossp.type,
                             'privileges': crossp.privileges, 'target_md5': crossp.target_md5,
                             'target_path': crossp.target_path, 'segment': segment,
                             'source_path': crossp.source_path, 'source_web_link': crossp.source_proc.webui_link,
                             'target_web_link': crossp.target_proc.webui_link, 'source_proc_guid': crossp.source_proc.id,
                             'target_proc_guid': crossp.target_proc.id, 'source_md5': crossp.source_md5}
                 process_summary['crossprocs'].append(cp_dict)
+
+            process_summary['segments_processed'] += 1
 
         return process_summary
 

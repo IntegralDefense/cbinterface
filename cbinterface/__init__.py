@@ -552,6 +552,8 @@ def main():
     parser_proc.add_argument('--no-analysis', action='store_true',
                              help="Don't fetch and print process activity")
     parser_proc.add_argument('--json', action='store_true', help='output process summary in json')
+    parser_proc.add_argument('--segment-limit', action='store', type=int, default=None,
+                             help='stop processing events into json after this many process segments')
 
     facet_args = [
         'process_name', 'childproc_name', 'username', 'parent_name', 'path', 'hostname',
@@ -893,7 +895,10 @@ def main():
                     args.no_analysis = True
                 if args.no_analysis != True:
                     if args.json:
-                        print(process.events_to_json())
+                        if args.segment_limit:
+                            print(process.events_to_json(segment_limit=args.segment_limit))
+                        else:
+                            print(process.events_to_json())
                     else:
                         process.default_print()
         else:
@@ -926,7 +931,10 @@ def main():
 
             if args.no_analysis != True:
                 if args.json:
-                    print(sp.events_to_json())
+                    if args.segment_limit:
+                        print(sp.events_to_json(segment_limit=args.segment_limit))
+                    else:
+                        print(sp.events_to_json())
                 else:
                     sp.default_print()
 
