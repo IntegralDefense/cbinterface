@@ -116,7 +116,10 @@ class ProcessWrapper():
         process_summary['parent'] = process_raw_sum_data['parent']
         start_time = process_summary['start'].replace('T', ' ')
         start_time = start_time.replace('Z','')
-        start_time = datetime.datetime.strptime(start_time, '%Y-%m-%d %H:%M:%S.%f')
+        try:
+            start_time = datetime.datetime.strptime(start_time, '%Y-%m-%d %H:%M:%S.%f')
+        except ValueError as e:
+            logging.info("Unexpected result. Probably incomplete process data.")
         process_summary['start'] = (start_time)
         process_summary['filemods'] = []
         process_summary['regmods'] = []
@@ -292,9 +295,15 @@ class ProcessWrapper():
 
 
     def __str__(self):
-        binary_vinfo = self.proc.binary.version_info
-        binary_sdata = self.proc.binary.signing_data
-        binary_vt = self.proc.binary.virustotal
+        binary_vinfo = None
+        binary_sdata = None
+        binary_vt = None
+        try:
+            binary_vinfo = self.proc.binary.version_info
+            binary_sdata = self.proc.binary.signing_data
+            binary_vt = self.proc.binary.virustotal
+        except AttributeError as e:
+            logging.info("Missing binary attributes from Cb data: {}".format(e))
         text = ""
         text += "\n\t-------------------------\n"
         text += "\tProcess Name: {}\n".format(self.proc.process_name)
@@ -308,16 +317,19 @@ class ProcessWrapper():
         text += "\tUsername: {}\n".format(self.proc.username)
         text += "\tComms IP: {}\n".format(self.proc.comms_ip)
         text += "\tInterface IP: {}\n".format(self.proc.interface_ip)
-        text += "\tBinary Description: {}\n".format(binary_vinfo.file_desc)
-        text += "\tProduct Name: {}\n".format(binary_vinfo.product_name)
-        text += "\tDigital Copyright: {}\n".format(binary_vinfo.legal_copyright)
-        text += "\tOriginal filename: {}\n".format(binary_vinfo.original_filename)
-        text += "\tSigned Status: {}\n".format(binary_sdata.result)
-        text += "\tSignature Publisher: {}\n".format(binary_sdata.publisher)
-        text += "\tSignature Issuer: {}\n".format(binary_sdata.issuer)
-        text += "\tSignature Subject: {}\n".format(binary_sdata.subject)
-        text += "\tVirusTotal Score: {}\n".format(binary_vt.score)
-        text += "\tVirusTotal Link: {}\n".format(binary_vt.link)
+        try:
+            text += "\tBinary Description: {}\n".format(binary_vinfo.file_desc)
+            text += "\tProduct Name: {}\n".format(binary_vinfo.product_name)
+            text += "\tDigital Copyright: {}\n".format(binary_vinfo.legal_copyright)
+            text += "\tOriginal filename: {}\n".format(binary_vinfo.original_filename)
+            text += "\tSigned Status: {}\n".format(binary_sdata.result)
+            text += "\tSignature Publisher: {}\n".format(binary_sdata.publisher)
+            text += "\tSignature Issuer: {}\n".format(binary_sdata.issuer)
+            text += "\tSignature Subject: {}\n".format(binary_sdata.subject)
+            text += "\tVirusTotal Score: {}\n".format(binary_vt.score)
+            text += "\tVirusTotal Link: {}\n".format(binary_vt.link)
+        except AttributeError as e:
+            pass
         text += "\tGUI Link: {}\n".format(self.proc.webui_link)
         return text
 
@@ -407,7 +419,7 @@ class SuperProcess(ProcessWrapper):#models.Process):
 
 
     def walk_process_tree(self):
-        def crawler(process_list, proc):
+        def crawler(process_list, proc, depth=0):
             childguids = []
             for childproc in proc.children:
                 if childproc.procguid not in childguids:
@@ -422,9 +434,12 @@ class SuperProcess(ProcessWrapper):#models.Process):
                                 'process_name': childproc.path,
                                 'id': childproc.procguid}
                         process_list.add_process(ProcessWrapper(cProc, suppressed_data=data))
+                    elif depth > CONFIG['DEFAULT'].getint('max_recursive_depth'):
+                        logging.debug("Process Tree exceeded the configured Maximum Recursive Depth.")
+                        return process_list
                     else:
                         process_list.add_process(ProcessWrapper(cProc))
-                        crawler(process_list, cProc)
+                        crawler(process_list, cProc, depth+1)
 
             return process_list
 
