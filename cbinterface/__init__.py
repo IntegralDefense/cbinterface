@@ -560,7 +560,7 @@ def main():
         'parent_pid', 'comms_ip', 'process_md5', 'start', 'group', 'interface_ip',
         'modload_count', 'childproc_count', 'cmdline', 'regmod_count', 'process_pid',
         'parent_id', 'os_type', 'rocessblock_count', 'crossproc_count', 'netconn_count',
-        'parent_md5', 'host_type', 'last_update', 'filemod_count'
+        'parent_md5', 'host_type', 'last_update', 'filemod_count', 'digsig_result'
         ]
  
     parser_query = subparsers.add_parser('query',
