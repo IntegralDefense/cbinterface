@@ -121,10 +121,10 @@ class hyperLiveResponse():
                 self.lerc_status = client.status
                 return self.lerc_status
             else:
-                logging.error("No lerc by hostname '{}'".format(self.hostname))
+                logging.debug("No lerc by hostname '{}'".format(self.hostname))
                 return False
         except:
-            logging.info("Can't reach the lerc control server")
+            logging.debug("Can't reach the lerc control server")
         return None
 
 
@@ -155,10 +155,10 @@ class hyperLiveResponse():
         text += "\tnetwork_interfaces:\n"
         for ni in self.sensor.network_interfaces:
             text += "\t\t{}\n".format(ni)
-        if self.get_lerc_status():
-            text += "\n\tLERC Status:\n"
-            text += "\t\tClient installed at '{}' - status={} - last check-in='{}'\n".format(self.hostname,
-                    self.lerc_status['install_date'], self.lerc_status['status'], self.lerc_status['last_activity'])
+        #if self.get_lerc_status():
+        #    text += "\n\tLERC Status:\n"
+        #    text += "\t\tClient installed at '{}' - status={} - last check-in='{}'\n".format(self.hostname,
+        #            self.lerc_status['install_date'], self.lerc_status['status'], self.lerc_status['last_activity'])
         #if self.sensor.status == "Online":
         #    text += "\n\t+ Tring to get logical drives..\n"
         #    if not self.lr_session:
