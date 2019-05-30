@@ -1,2 +1,2 @@
-cbapi==1.3.4
+cbapi==1.4.4
 git+https://github.com/IntegralDefense/lerc/tree/master/lerc_control
