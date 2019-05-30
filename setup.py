@@ -92,7 +92,7 @@ setup(
     # your project is installed. For an analysis of "install_requires" vs pip's
     # requirements files see:
     # https://packaging.python.org/en/latest/requirements.html
-    install_requires=['cbapi==1.3.6'],
+    install_requires=['cbapi==1.4.4'],
 
     entry_points={
         'console_scripts': ['cbinterface=cbinterface:main'],
