@@ -398,7 +398,7 @@ if 'https_proxy' in os.environ:
     HTTPS_PROXY = os.environ['https_proxy']
 
 def handle_proxy(profile):
-    creds = auth.CredentialStore("response").get_credentials(profile=profile)
+    creds = auth.FileCredentialStore("response").get_credentials(profile=profile)
 
     if 'ignore_system_proxy' in creds and 'https_proxy' in os.environ:
         if creds['ignore_system_proxy']:
@@ -498,8 +498,7 @@ def main():
 
     parser = argparse.ArgumentParser(description="An interface to CarbonBlack environments")
 
-    #profiles = auth.CredentialStore("response").get_profiles()
-    parser.add_argument('-e', '--environment', choices=auth.CredentialStore("response").get_profiles(),
+    parser.add_argument('-e', '--environment', choices=auth.FileCredentialStore("response").get_profiles(),
                         help='specify a specific instance you want to work with. If not defined \'-t production\' will be used implicitly.')
     parser.add_argument('-t', '--envtypes', type=str, 
                         help='specify any combination of envtypes. Default=All \'production\' envtypes. Ignored if -e is set.',
@@ -670,8 +669,8 @@ def main():
         default_profile = auth.default_profile
         default_profile['envtype'] = 'production'
         query_envtype = set(args.envtypes.lower().split(','))
-        for profile in auth.CredentialStore("response").get_profiles():
-            credentials = auth.CredentialStore("response").get_credentials(profile=profile)
+        for profile in auth.FileCredentialStore("response").get_profiles():
+            credentials = auth.FileCredentialStore("response").get_credentials(profile=profile)
             profile_envtype = set(credentials['envtype'].lower().split(','))
             if(query_envtype.issubset(profile_envtype)):
                 profiles.append(profile)
@@ -722,7 +721,7 @@ def main():
     try:
         default_profile = auth.default_profile
         default_profile['lerc_install_cmd'] = None
-        config = auth.CredentialStore("response").get_credentials(profile=profile)
+        config = auth.FileCredentialStore("response").get_credentials(profile=profile)
     except:
         pass
 
