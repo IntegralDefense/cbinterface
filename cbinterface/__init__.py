@@ -171,7 +171,6 @@ def LR_collection(hyper_lr, args):
     try:
         lr_session.put_file(filedata, sensor_dir + lr_filename)
     except Exception as e:
-        # If 'ERROR_FILE_EXISTS' in errmsg, log the error, but try to continue with existing package
         if 'ERROR_FILE_EXISTS' not in str(e):
             LOGGER.error("Unknown Error: {}".format(str(e)))
             return False
@@ -559,7 +558,7 @@ def main():
         'parent_pid', 'comms_ip', 'process_md5', 'start', 'group', 'interface_ip',
         'modload_count', 'childproc_count', 'cmdline', 'regmod_count', 'process_pid',
         'parent_id', 'os_type', 'rocessblock_count', 'crossproc_count', 'netconn_count',
-        'parent_md5', 'host_type', 'last_update', 'filemod_count'
+        'parent_md5', 'host_type', 'last_update', 'filemod_count', 'digsig_result'
         ]
  
     parser_query = subparsers.add_parser('query',
@@ -591,6 +590,7 @@ def main():
     parser_collect.add_argument('-i', '--info', action='store_true', help='print sensor information')
     parser_collect.add_argument('-gst', '--get-task', action='store_true', help='get scheduled tasks or specifc task')
     parser_collect.add_argument('-mc', '--multi-collect', action='store', help='path to ini file listing files and regs to collect')
+    parser_collect.add_argument('--no-lerc', default=False, action='store_true', help='Do not attempt to use a LERC for anything.')
 
     remediate_file_example = """Example remediate ini file:
     [files]
@@ -836,13 +836,14 @@ def main():
 
         else:
             # perform full live response collection
-            if config['lerc_install_cmd']:
-                result = hyper_lr.get_lerc_status()
-                if not result or result == 'UNINSTALLED' or result == 'UNKNOWN':
-                   if not hyper_lr.deploy_lerc(config['lerc_install_cmd']):
-                       LOGGER.warn("LERC deployment failed")
-            else:
-                LOGGER.info("{} environment is not configrued for LERC deployment".format(profile))
+            if not args.no_lerc:
+                if config['lerc_install_cmd']:
+                    result = hyper_lr.get_lerc_status()
+                    if not result or result == 'UNINSTALLED' or result == 'UNKNOWN':
+                       if not hyper_lr.deploy_lerc(config['lerc_install_cmd']):
+                           LOGGER.warn("LERC deployment failed")
+                else:
+                    LOGGER.info("{} environment is not configrued for LERC deployment".format(profile))
             return LR_collection(hyper_lr, args)
 
     # Remediation #
