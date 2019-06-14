@@ -24,7 +24,7 @@ from cbapi import live_response_api
 from cbapi.errors import ApiError, ObjectNotFoundError, TimeoutError, MoreThanOneResultError
 from cbapi.response import *
 
-from cbinterface.modules.helpers import eastern_time
+from cbinterface.modules.helpers import as_configured_timezone, CONFIG
 from cbinterface.modules.process import SuperProcess
 from cbinterface.modules.query import CBquery
 from cbinterface.modules.response import hyperLiveResponse
@@ -42,10 +42,6 @@ LOGGER.addHandler(handler)
 
 # MAX number of threads performing splunk searches
 MAX_SEARCHES = 4
-
-# Configuration file
-HOME_DIR = os.path.dirname(os.path.realpath(__file__))
-CONFIG_PATH = os.path.join(HOME_DIR, 'etc', 'config.ini')
 
 
 def clean_exit(signal, frame):
@@ -76,7 +72,7 @@ def enumerate_usb(sensor, start_time=None):
                     print("WARN:::: {0}".format(str(pieces)))
                 else:
                     device_info = pieces[1] #.split('{53f56307-b6bf-11d0-94f2-00a0c91efb8b}')[0]
-                    print("  {}: {} {}".format(eastern_time(rm.timestamp), rm.type, device_info))
+                    print("  {}: {} {}".format(as_configured_timezone(rm.timestamp), rm.type, device_info))
                     #print(device_info)
                     
 
@@ -115,8 +111,7 @@ def LR_collection(hyper_lr, args):
     """
 
     # Get configuration items
-    config = ConfigParser()
-    config.read(CONFIG_PATH)
+    config = CONFIG
     lr_analysis_path = config['ID-LR']['lr_package_path']
     if not os.path.exists(lr_analysis_path):
         LOGGER.info("LR package not defined")
@@ -423,10 +418,11 @@ def sensor_search(profiles, sensor_name):
             cb_finds.append((sensor, profile))
             LOGGER.info("Found a sensor by this name in {} environment".format(profile))
         except TypeError as e:
-            # Appears to be bug in cbapi library here -> site-packages/cbapi/query.py", line 34, in one
+            # bug in cbapi library here -> site-packages/cbapi/query.py", line 34, in one
             # Raise MoreThanOneResultError(message="0 results for query {0:s}".format(self._query))
             # That raises a TypeError 
-            if 'non-empty format string passed to object' in str(e):
+            # https://github.com/carbonblack/cbapi-python/issues/161
+            if 'non-empty format string passed to object' in str(e) or 'unsupported format string passed to dict' in str(e):
                 try: # accounting for what appears to be an error in cbapi error handling
                     result = cb.select(Sensor).where("hostname:{}".format(sensor_name))
                     if isinstance(result[0], models.Sensor):
@@ -457,12 +453,15 @@ def sensor_search(profiles, sensor_name):
                         for sensor in result:
                             if user_choice == int(sensor.id):
                                 cb_finds.append((sensor, profile))
+                    elif isinstance(result[0], None):
+                        LOGGER.debug("No results for sensor query.")
+                        print("here")
                     else:
                         LOGGER.error("-Unseen error condition: {}".format(e))
                 except Exception as e:
                     LOGGER.debug("--Unseen error condition: {}".format(e))
             else:
-                LOGGER.error("---Unseen error condition: {}".format(e))
+                LOGGER.error("---Unseen error condition: {}".format(e), exc_info=True)
         except Exception as e:
             LOGGER.debug("Exception searching for sensor in {}".format(str(e)))
             pass
@@ -503,6 +502,7 @@ def main():
     parser.add_argument('-t', '--envtypes', type=str, 
                         help='specify any combination of envtypes. Default=All \'production\' envtypes. Ignored if -e is set.',
                         default='production')
+    parser.add_argument('-tz', '--time-zone', action='store', help='specify the timezone to override defaults. ex. "US/Eastern" or "Europe/Rome"')
     #parser.add_argument('--debug', action='store_true', help='print debugging info')
     #parser.add_argument('--warnings', action='store_true',
     #                         help="Warn before printing large executions")
@@ -657,6 +657,10 @@ def main():
         print()
         return 0
 
+    # If user set timezone
+    if args.time_zone:
+        # as_configured_timezone does checking
+        os.environ['CBINTERFACE_TIMEZONE'] = args.time_zone
 
     # Set up environment profiles
     profile = None
@@ -786,10 +790,7 @@ def main():
 
         elif args.memdump:
             # get config items
-            config = ConfigParser()
-            config.read(CONFIG_PATH)
-            #if config.has_section('memory'):
-            #    if 
+            config = CONFIG
             cb_compress = config['memory'].getboolean('cb_default_compress')
             custom_compress = config['memory'].getboolean('custom_compress')
             custom_compress_file = config['memory']['custom_compress_file']

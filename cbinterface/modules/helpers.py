@@ -1,13 +1,58 @@
 
+import os
 import datetime
+import logging
+
+from configparser import ConfigParser
 from dateutil import tz
+from dateutil.zoneinfo import get_zonefile_instance
+
+## -- Global variables -- ##
+# Configuration
+HOME_DIR = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+CONFIG_PATH = os.path.join(HOME_DIR, 'etc', 'config.ini')
+
+# load the default config
+CONFIG = ConfigParser()
+CONFIG.read(CONFIG_PATH)
+# get the default configuration file paths (allows for users to easily override settings)
+# and re-load the config to account for all config items
+CONFIG.read(CONFIG['DEFAULT']['config_path_list'].split(','))
+
+DEFAULT_TIMEBASE = tz.gettz('GMT')
+CONFIGURED_TIMEBASE = None
+try:
+   CONFIGURED_TIMEBASE = CONFIG['DEFAULT']['time_zone']
+   zonenames = list(get_zonefile_instance().zones)
+   if CONFIGURED_TIMEBASE not in zonenames:
+       logging.error("'{}' not a recognized timezone. Using default timezone.".format(CONFIGURED_TIMEBASE))
+       CONFIGURED_TIMEBASE = DEFAULT_TIMEBASE
+   else:
+       CONFIGURED_TIMEBASE = tz.gettz(CONFIGURED_TIMEBASE)
+except Exception as e:
+   logging.error("Exception occured setting CONFIGURED_TIMEZONE: {}".format(e))
+   CONFIGURED_TIMEBASE = DEFAULT_TIMEBASE
+
 
 ## -- Global helper functions -- ##
-def eastern_time(timestamp):
-    eastern_timebase = tz.gettz('America/New_York')
-    eastern_time = timestamp.replace(tzinfo=tz.gettz('UTC'))
-    return eastern_time.astimezone(eastern_timebase).strftime('%Y-%m-%d %H:%M:%S.%f%z')
-
+def as_configured_timezone(timestamp):
+    """Convert timestamp to the configured default timezone.
+    """
+    # the timestamps from CbR are not timezone aware, but they are GMT.
+    _time = timestamp.replace(tzinfo=DEFAULT_TIMEBASE)
+    if 'CBINTERFACE_TIMEZONE' in os.environ:
+        env_timebase = os.environ['CBINTERFACE_TIMEZONE']
+        zonenames = list(get_zonefile_instance().zones)
+        if env_timebase not in zonenames:
+            logging.error("'{}' not a recognized timezone. Using default timezone.".format(env_timebase))
+            return _time.strftime('%Y-%m-%d %H:%M:%S.%f%z')
+        else:
+            env_timebase = tz.gettz(env_timebase)
+            return _time.astimezone(env_timebase).strftime('%Y-%m-%d %H:%M:%S.%f%z')
+    elif CONFIGURED_TIMEBASE is not DEFAULT_TIMEBASE:
+        return _time.astimezone(CONFIGURED_TIMEBASE).strftime('%Y-%m-%d %H:%M:%S.%f%z')
+    else:
+        return _time.strftime('%Y-%m-%d %H:%M:%S.%f%z')
 
 ## OLD Stuff, not used anymore
 ## -- Intel/detection helpers -- ##

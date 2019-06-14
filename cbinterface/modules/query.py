@@ -3,7 +3,7 @@ import datetime
 import logging
 from dateutil import tz
 from cbapi.response import *
-from .helpers import eastern_time
+from .helpers import as_configured_timezone
 
 
 ## -- Process querying functions -- ##
@@ -33,7 +33,7 @@ class CBquery():
             processes = self.cb.select(Process).where(query).group_by('id')
             print("\n\tEastern Time\t|\tUsername\t|\tHostname")
             for proc in processes:
-                start_time = str(eastern_time(proc.start))
+                start_time = str(as_configured_timezone(proc.start))
                 start_time = start_time[:start_time.rfind('.')]
                 print("  {}\t    {}\t\t{}".format(start_time, proc.username, proc.hostname))
             print()
@@ -90,7 +90,7 @@ class CBquery():
                 print("\tParent Name: {}".format(proc.parent_name))
                 print("\tHostname: {}".format(proc.hostname))
                 print("\tUsername: {}".format(proc.username))
-                print("\tStart Time: {}".format(eastern_time(proc.start)))
+                print("\tStart Time: {}".format(as_configured_timezone(proc.start)))
                 print("\tGUI Link: {}".format(proc.webui_link))
             print()
         return

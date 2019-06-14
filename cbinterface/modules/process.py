@@ -4,22 +4,10 @@ import os
 import logging
 import datetime
 
-from configparser import ConfigParser
 from cbapi.response import models
 from cbapi.errors import ApiError, ObjectNotFoundError, TimeoutError, MoreThanOneResultError
 
-from .helpers import eastern_time
-
-# Configuration
-HOME_DIR = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
-CONFIG_PATH = os.path.join(HOME_DIR, 'etc', 'config.ini')
-
-# load the default config
-CONFIG = ConfigParser()
-CONFIG.read(CONFIG_PATH)
-# get the default configuration file paths (allows for users to easily override settings)
-# and re-load the config to account for all config items
-CONFIG.read(CONFIG['DEFAULT']['config_path_list'].split(','))
+from .helpers import CONFIG, as_configured_timezone
 
 
 class ProcessWrapper():
@@ -197,16 +185,16 @@ class ProcessWrapper():
                         signed = b.signed
                         product_name = b.product_name
                         print("%s%s: %s: %s , type:%s , md5:%s, signed:%s, product_name:%s" % ('  ',
-                              eastern_time(fm.timestamp), fm.type, fm.path, fm.filetype,
+                              as_configured_timezone(fm.timestamp), fm.type, fm.path, fm.filetype,
                               fm.md5, signed, product_name))
                     except ObjectNotFoundError:
-                        print("%s%s: %s: %s , type:%s , md5:%s" % ('  ', eastern_time(fm.timestamp),
+                        print("%s%s: %s: %s , type:%s , md5:%s" % ('  ', as_configured_timezone(fm.timestamp),
                               fm.type, fm.path, fm.filetype, fm.md5))
                 elif fm.type != "CreatedFile":
                     if fm.filetype != "Unknown":
-                        print("%s%s: %s: %s , type:%s" % ('  ', eastern_time(fm.timestamp), fm.type, fm.path, fm.filetype))
+                        print("%s%s: %s: %s , type:%s" % ('  ', as_configured_timezone(fm.timestamp), fm.type, fm.path, fm.filetype))
                     else:
-                        print("%s%s: %s: %s" % ('  ', eastern_time(fm.timestamp), fm.type, fm.path))
+                        print("%s%s: %s: %s" % ('  ', as_configured_timezone(fm.timestamp), fm.type, fm.path))
         print()
 
 
@@ -215,7 +203,7 @@ class ProcessWrapper():
         for segment in self.proc.get_segments():
             self.proc.current_segment = segment
             for nc in self.proc.netconns:
-                print("  {}: ({}) local/proxy IP:{}/{} remote IP:{} remote port:{} domain:{}".format(eastern_time(nc.timestamp),
+                print("  {}: ({}) local/proxy IP:{}/{} remote IP:{} remote port:{} domain:{}".format(as_configured_timezone(nc.timestamp),
                                                                                 nc.direction, nc.local_ip, nc.proxy_ip, nc.remote_ip,
                                                                                 nc.remote_port, nc.domain))
         print()
@@ -226,7 +214,7 @@ class ProcessWrapper():
         for segment in self.proc.get_segments():
             self.proc.current_segment = segment
             for rm in self.proc.regmods:
-                print("  {}: {} {}".format(eastern_time(rm.timestamp), rm.type, rm.path))
+                print("  {}: {} {}".format(as_configured_timezone(rm.timestamp), rm.type, rm.path))
         print()
 
 
@@ -236,7 +224,7 @@ class ProcessWrapper():
             self.proc.current_segment = segment
             for modload in self.proc.modloads:
                 sig_status = 'signed' if modload.is_signed else 'unsigned'
-                print("  {}: ({}) {} , md5:{}".format(eastern_time(modload.timestamp),
+                print("  {}: ({}) {} , md5:{}".format(as_configured_timezone(modload.timestamp),
                                                       sig_status, modload.path, modload.md5))
         print()
 
@@ -245,7 +233,7 @@ class ProcessWrapper():
         for segment in self.proc.get_segments():
             self.proc.current_segment = segment
             for unmodload in self.proc.unsigned_modloads:
-                print("  {}: {} , md5:{}".format(eastern_time(unmodload.timestamp),
+                print("  {}: {} , md5:{}".format(as_configured_timezone(unmodload.timestamp),
                                                  unmodload.path, unmodload.md5))
         print()
 
@@ -254,7 +242,7 @@ class ProcessWrapper():
         for segment in self.proc.get_segments():
             self.proc.current_segment = segment
             for cross in self.proc.crossprocs:
-                print("  {} | {} | {} -> {} | {} -> {}".format(eastern_time(cross.timestamp),
+                print("  {} | {} | {} -> {} | {} -> {}".format(as_configured_timezone(cross.timestamp),
                                                                cross.type,
                                                                cross.source_path,
                                                                cross.target_path,
@@ -279,7 +267,7 @@ class ProcessWrapper():
             child_events = children[guid]
             # reverse so they're printed in start/end sequence
             for c in reversed(child_events):
-                print("  {}: {} (PID={}) - {}".format(eastern_time(c.timestamp),
+                print("  {}: {} (PID={}) - {}".format(as_configured_timezone(c.timestamp),
                                                       c.path,
                                                       c.pid,
                                                       c.procguid))
@@ -308,7 +296,7 @@ class ProcessWrapper():
         text += "\n\t-------------------------\n"
         text += "\tProcess Name: {}\n".format(self.proc.process_name)
         text += "\tProcess PID: {}\n".format(self.proc.process_pid)
-        text += "\tProcess Start: {}\n".format(eastern_time(self.proc.start))
+        text += "\tProcess Start: {}\n".format(as_configured_timezone(self.proc.start))
         text += "\tProcess MD5: {}\n".format(self.proc.process_md5)
         text += "\tCommand Line: {}\n".format(self.proc.cmdline)
         text += "\tParent Name: {}\n".format(self.proc.parent_name)
