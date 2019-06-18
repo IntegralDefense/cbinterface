@@ -547,7 +547,7 @@ def main():
                              help="print crossprocs")
     #parser_proc.add_argument('-intel', '--intel-hits', action='store_true',
     #                         help="show intel (feed/WL) hits that do not result in ACE alerts")
-    parser_proc.add_argument('--no-analysis', action='store_true',
+    parser_proc.add_argument('-na', '--no-analysis', action='store_true',
                              help="Don't fetch and print process activity")
     parser_proc.add_argument('--json', action='store_true', help='output process summary in json')
     parser_proc.add_argument('--segment-limit', action='store', type=int, default=None,
