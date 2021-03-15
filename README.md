@@ -1,3 +1,16 @@
+# MOVED HERE -> https://github.com/ace-ecosystem/cbinterface2
+
+
+
+
+^^^^ Much better.
+
+
+
+
+
+OLD STUFF BELOW
+
 # cbinterface
 
 cbinterface is a command line tool for interfacing with multiple carbonblack environments to perform analysis and live response functions.
